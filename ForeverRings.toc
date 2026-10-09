@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: Forever Rings
+## Notes: Controller-first radial rings for WoW Forever. Food, usable items and mounts fill themselves from your bags.
+## Author: Robert-Jan
+## Version: 0.1.0
+## SavedVariables: ForeverRingsDB
+
+Snippets.lua
+Data.lua
+Display.lua
+Core.lua

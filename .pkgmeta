@@ -1,0 +1,10 @@
+package-as: ForeverRings
+
+ignore:
+  - tests
+  - scripts
+  - dist
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

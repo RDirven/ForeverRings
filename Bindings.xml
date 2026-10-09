@@ -1,0 +1,7 @@
+<Bindings>
+	<Binding name="CLICK ForeverRingsTrigger_main:LeftButton" header="FOREVERRINGS" category="ADDONS"/>
+	<Binding name="CLICK ForeverRingsTrigger_food:LeftButton" category="ADDONS"/>
+	<Binding name="CLICK ForeverRingsTrigger_bag:LeftButton" category="ADDONS"/>
+	<Binding name="CLICK ForeverRingsTrigger_mount:LeftButton" category="ADDONS"/>
+	<Binding name="CLICK ForeverRingsTrigger_tools:LeftButton" category="ADDONS"/>
+</Bindings>

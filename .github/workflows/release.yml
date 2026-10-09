@@ -1,0 +1,25 @@
+name: Release
+
+# Push a tag like v0.1.0 to test, package and upload to CurseForge/Wago.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run tests
+        run: |
+          sudo apt-get update && sudo apt-get install -y luajit
+          luajit tests/snippets_test.lua
+
+      - uses: BigWigsMods/packager@v2
