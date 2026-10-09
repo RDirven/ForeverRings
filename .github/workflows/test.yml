@@ -15,3 +15,5 @@ jobs:
         run: for f in *.lua; do luajit -bl "$f" > /dev/null || exit 1; done
       - name: Snippet tests
         run: luajit tests/snippets_test.lua
+      - name: Addon tests (fake client)
+        run: luajit tests/addon_test.lua

@@ -233,13 +233,16 @@ end
 
 function commands.remove(args)
 	local key, index = args:match("^(%S+)%s+(%d+)$")
-	local ring = key and EditableRing(key:lower())
+	if not key then
+		return Print("Usage: /frings remove <ring> <number from /frings list>")
+	end
+	local ring = EditableRing(key:lower())
 	if ring and ring.slots[tonumber(index)] then
 		local entry = table.remove(ring.slots, tonumber(index))
 		RefreshAll()
 		Print("Removed " .. EntryName(entry) .. ".")
-	elseif not key then
-		Print("Usage: /frings remove <ring> <number from /frings list>")
+	elseif ring then
+		Print("No slot " .. index .. " in '" .. key:lower() .. "'. See /frings list " .. key:lower())
 	end
 end
 
