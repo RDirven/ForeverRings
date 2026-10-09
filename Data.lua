@@ -57,6 +57,8 @@ local function ScanBags(filter)
 	return found
 end
 
+ns.ScanBags = ScanBags
+
 local function IsFood(itemID)
 	local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
 	return classID == CLASS_CONSUMABLE and subClassID == SUBCLASS_FOOD_DRINK

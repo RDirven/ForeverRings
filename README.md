@@ -18,10 +18,28 @@
 
 ## Getting started
 
-1. Open **Options → Keybindings → AddOns → Forever Rings** and bind **Main ring**, for example to a shoulder button (LB / RB). Don't use A or B: those select and go back while a ring is open.
-2. Hold the button, push the stick toward a slot and release.
+1. Type `/frings` (or bind **Open settings**) to open the settings screen.
+2. Select **Main**, press **Y** and press the button you want for it, for example a shoulder button. (A and B are kept for selecting and going back inside rings.)
+3. Close with **B**. Hold your button, push the stick toward a slot and release.
+
+## Settings screen
+
+Fully playable on a controller. Mouse and keyboard work too.
+
+| Button | Does |
+|---|---|
+| **LB / RB** | Switch between Rings and Settings, or between picker categories |
+| **D-pad** | Move |
+| **A** | Open a ring, choose a slot, pick an item |
+| **B** | Back / close |
+| **X** | Clear a slot, delete a custom ring (press twice) |
+| **Y** | Set the button that opens a ring |
+
+Fill slots from **Bags**, **Spells**, **Mounts**, **Toys** or other **Rings** (sub-rings). The preview shows the ring exactly as it will appear.
 
 ## Commands
+
+Everything in the settings screen is also available as a command (`/frings help`):
 
 | Command | What it does |
 |---|---|

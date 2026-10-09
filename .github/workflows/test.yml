@@ -17,3 +17,5 @@ jobs:
         run: luajit tests/snippets_test.lua
       - name: Addon tests (fake client)
         run: luajit tests/addon_test.lua
+      - name: Settings screen tests
+        run: luajit tests/config_test.lua

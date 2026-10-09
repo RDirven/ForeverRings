@@ -340,7 +340,7 @@ Test("commands refuse bad input", function()
 	Has(g.Slash("bind nope X"), "Usage")
 	Has(g.Slash("style neon"), "Usage")
 	Has(g.Slash("input wheel"), "Usage")
-	Has(g.Slash(""), "/frings")
+	Has(g.Slash("help"), "/frings")
 end)
 
 Test("full ring refuses a 9th slot", function()

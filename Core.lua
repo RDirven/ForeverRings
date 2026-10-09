@@ -1,6 +1,7 @@
 local _, ns = ...
 
 BINDING_HEADER_FOREVERRINGS = "Forever Rings"
+BINDING_NAME_FOREVERRINGS_CONFIG = "Open settings"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_main:LeftButton"] = "Main ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_food:LeftButton"] = "Food ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_bag:LeftButton"] = "Bag ring (usable items)"
@@ -13,6 +14,10 @@ local INPUTS = {
 	dpad = { "PADDUP", "PADDRIGHT", "PADDDOWN", "PADDLEFT" },
 }
 local DIRECTIONS = { "up", "right", "down", "left" }
+
+ns.STYLES = { "clean", "classic" }
+ns.INPUTS = { "rstick", "lstick", "dpad" }
+ns.INPUT_LABELS = { rstick = "Right stick", lstick = "Left stick", dpad = "D-pad" }
 
 local DEFAULTS = {
 	style = "clean",
@@ -29,9 +34,10 @@ local header
 local triggers = {}
 local refreshPending, refreshQueued = false, false
 
-local function Print(msg)
+function ns.Print(msg)
 	print("|cff59bfffForever Rings|r: " .. msg)
 end
+local Print = ns.Print
 
 local function SecureButton(name, snippet, clicks)
 	local button = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
@@ -106,7 +112,11 @@ local function RefreshAll()
 			lastCounts[key] = nil
 		end
 	end
+	if ns.OnRingsChanged then
+		ns.OnRingsChanged()
+	end
 end
+ns.RefreshAll = RefreshAll
 
 -- Bag events come in bursts; coalesce them into one refresh.
 local function QueueRefresh()
@@ -145,6 +155,158 @@ events:SetScript("OnEvent", function(_, event)
 	end
 end)
 
+-- Ring editing API ----------------------------------------------------------
+-- Shared by the slash commands and the settings screen. Everything here
+-- changes secure state, so it returns nil plus a message when in combat.
+
+local COMBAT = "Can't change rings in combat."
+local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, tools = 5 }
+
+-- main, the auto rings, tools, then custom rings alphabetically.
+function ns.RingKeys()
+	local keys = {}
+	for key in pairs(ns.autoRings) do
+		keys[#keys + 1] = key
+	end
+	for key in pairs(ForeverRingsDB.rings) do
+		keys[#keys + 1] = key
+	end
+	table.sort(keys, function(a, b)
+		local oa, ob = BUILTIN_ORDER[a] or 99, BUILTIN_ORDER[b] or 99
+		if oa ~= ob then
+			return oa < ob
+		end
+		return a < b
+	end)
+	return keys
+end
+
+function ns.IsEditable(key)
+	return ForeverRingsDB.rings[key] ~= nil
+end
+
+function ns.IsDeletable(key)
+	return ns.IsEditable(key) and key ~= "main" and key ~= "tools"
+end
+
+function ns.EntryName(entry)
+	if entry.ring then
+		return "Ring: " .. ns.RingLabel(entry.ring)
+	elseif entry.kind == "spell" then
+		return C_Spell.GetSpellName(entry.id) or ("spell " .. entry.id)
+	end
+	return C_Item.GetItemNameByID(entry.id) or ("item " .. entry.id)
+end
+
+function ns.NewRing(name)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	local key = name:lower()
+	if not key:match("^%w+$") then
+		return nil, "Use letters and digits only."
+	elseif ForeverRingsDB.rings[key] or ns.autoRings[key] then
+		return nil, "'" .. key .. "' already exists."
+	end
+	ForeverRingsDB.rings[key] = { label = name, slots = {} }
+	RefreshAll()
+	return key
+end
+
+-- Picks the first free "Ring N" name, for creating rings without a keyboard.
+function ns.NewNumberedRing()
+	local n = 1
+	while ForeverRingsDB.rings["ring" .. n] do
+		n = n + 1
+	end
+	return ns.NewRing("Ring" .. n)
+end
+
+function ns.DeleteRing(key)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	elseif not ns.IsDeletable(key) then
+		return nil, "'" .. ns.RingLabel(key) .. "' can't be deleted."
+	end
+	ForeverRingsDB.rings[key] = nil
+	for _, ring in pairs(ForeverRingsDB.rings) do
+		for i = #ring.slots, 1, -1 do
+			if ring.slots[i].ring == key then
+				table.remove(ring.slots, i)
+			end
+		end
+	end
+	ns.BindRing(key, nil)
+	RefreshAll()
+	return true
+end
+
+-- Replaces slot `index`, or appends when index is one past the end.
+function ns.SetSlot(key, index, entry)
+	local ring = ForeverRingsDB.rings[key]
+	if InCombatLockdown() then
+		return nil, COMBAT
+	elseif not ring then
+		return nil, ns.autoRings[key] and "'" .. ns.RingLabel(key) .. "' fills itself and can't be edited." or "No ring named '" .. key .. "'."
+	elseif entry.ring == key then
+		return nil, "A ring can't contain itself."
+	elseif index > #ring.slots + 1 or index > ns.MAX_SLICES then
+		return nil, "That ring is full (" .. ns.MAX_SLICES .. " slots). Use a sub-ring for more."
+	end
+	ring.slots[index] = entry
+	RefreshAll()
+	return true
+end
+
+function ns.RemoveSlot(key, index)
+	local ring = ForeverRingsDB.rings[key]
+	if InCombatLockdown() then
+		return nil, COMBAT
+	elseif not (ring and ring.slots[index]) then
+		return nil, "No slot " .. index .. " in '" .. key .. "'."
+	end
+	local entry = table.remove(ring.slots, index)
+	RefreshAll()
+	return entry
+end
+
+function ns.TriggerCommand(key)
+	return "CLICK ForeverRingsTrigger_" .. key .. ":LeftButton"
+end
+
+function ns.GetRingBinding(key)
+	return GetBindingKey(ns.TriggerCommand(key))
+end
+
+-- One button per ring: clears the ring's old buttons first. nil just unbinds.
+function ns.BindRing(key, binding)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	local old = { GetBindingKey(ns.TriggerCommand(key)) }
+	for _, oldKey in ipairs(old) do
+		SetBinding(oldKey)
+	end
+	if binding then
+		SetBindingClick(binding, "ForeverRingsTrigger_" .. key, "LeftButton")
+	end
+	SaveBindings(GetCurrentBindingSet())
+	return true
+end
+
+function ns.SetStyle(name)
+	ForeverRingsDB.style = name
+end
+
+function ns.SetInput(name)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.input = name
+	ApplyInput()
+	return true
+end
+
 -- Slash commands ------------------------------------------------------------
 
 -- Accepts a shift-clicked item/spell link, "ring:<name>" or a plain item ID.
@@ -163,72 +325,50 @@ local function ParseEntry(text)
 	end
 end
 
-local function EditableRing(key)
-	local ring = ForeverRingsDB.rings[key]
-	if not ring then
-		Print(ns.autoRings[key] and ("'" .. key .. "' fills itself and can't be edited.") or ("No ring named '" .. key .. "'."))
+-- Prints the message when an API call fails; returns the result otherwise.
+local function Check(result, err)
+	if not result then
+		Print(err)
 	end
-	return ring
-end
-
-local function EntryName(entry)
-	if entry.ring then
-		return "Ring: " .. ns.RingLabel(entry.ring)
-	elseif entry.kind == "spell" then
-		return C_Spell.GetSpellName(entry.id) or ("spell " .. entry.id)
-	end
-	return C_Item.GetItemNameByID(entry.id) or ("item " .. entry.id)
+	return result
 end
 
 local commands = {}
 
 function commands.new(name)
-	local key = name:lower()
-	if not key:match("^%w+$") then
+	if not name:match("^%w+$") then
 		return Print("Usage: /frings new <name> (letters and digits)")
-	elseif ForeverRingsDB.rings[key] or ns.autoRings[key] then
-		return Print("'" .. key .. "' already exists.")
 	end
-	ForeverRingsDB.rings[key] = { label = name, slots = {} }
-	RefreshAll()
-	Print("Created '" .. key .. "'. Add it to the main ring with: /frings add main ring:" .. key)
+	local key = Check(ns.NewRing(name))
+	if key then
+		Print("Created '" .. key .. "'. Add it to the main ring with: /frings add main ring:" .. key)
+	end
 end
 
 function commands.delete(name)
 	local key = name:lower()
-	if key == "main" then
-		return Print("The main ring can't be deleted.")
-	elseif not EditableRing(key) then
-		return
+	if not ForeverRingsDB.rings[key] and not ns.autoRings[key] then
+		return Print("No ring named '" .. key .. "'.")
 	end
-	ForeverRingsDB.rings[key] = nil
-	for _, ring in pairs(ForeverRingsDB.rings) do
-		for i = #ring.slots, 1, -1 do
-			if ring.slots[i].ring == key then
-				table.remove(ring.slots, i)
-			end
-		end
+	if Check(ns.DeleteRing(key)) then
+		Print("Deleted '" .. key .. "'.")
 	end
-	RefreshAll()
-	Print("Deleted '" .. key .. "'.")
 end
 
 function commands.add(args)
 	local key, rest = args:match("^(%S+)%s*(.-)$")
-	local ring = key and EditableRing(key:lower())
-	local entry = ring and ParseEntry(rest)
+	key = key and key:lower()
+	local ring = key and ForeverRingsDB.rings[key]
 	if not ring then
-		return
-	elseif not entry then
-		return Print("Usage: /frings add <ring> <shift-click item/spell | ring:name>")
-	elseif #ring.slots >= ns.MAX_SLICES then
-		return Print("That ring is full (" .. ns.MAX_SLICES .. " slots). Use a sub-ring for more.")
-	elseif entry.ring == key:lower() then
-		return Print("A ring can't contain itself.")
+		return Print(key and ns.autoRings[key] and ("'" .. key .. "' fills itself and can't be edited.") or ("No ring named '" .. tostring(key) .. "'."))
 	end
-	table.insert(ring.slots, entry)
-	RefreshAll()
-	Print("Added " .. EntryName(entry) .. ".")
+	local entry = ParseEntry(rest)
+	if not entry then
+		return Print("Usage: /frings add <ring> <shift-click item/spell | ring:name>")
+	end
+	if Check(ns.SetSlot(key, #ring.slots + 1, entry)) then
+		Print("Added " .. ns.EntryName(entry) .. ".")
+	end
 end
 
 function commands.remove(args)
@@ -236,33 +376,30 @@ function commands.remove(args)
 	if not key then
 		return Print("Usage: /frings remove <ring> <number from /frings list>")
 	end
-	local ring = EditableRing(key:lower())
-	if ring and ring.slots[tonumber(index)] then
-		local entry = table.remove(ring.slots, tonumber(index))
-		RefreshAll()
-		Print("Removed " .. EntryName(entry) .. ".")
-	elseif ring then
-		Print("No slot " .. index .. " in '" .. key:lower() .. "'. See /frings list " .. key:lower())
+	key = key:lower()
+	if not ForeverRingsDB.rings[key] then
+		return Print(ns.autoRings[key] and ("'" .. key .. "' fills itself and can't be edited.") or ("No ring named '" .. key .. "'."))
+	end
+	local entry = Check(ns.RemoveSlot(key, tonumber(index)))
+	if entry then
+		Print("Removed " .. ns.EntryName(entry) .. ".")
 	end
 end
 
 function commands.list(name)
 	if name == "" then
-		local keys = {}
-		for key in pairs(ns.resolved) do
-			keys[#keys + 1] = key
-		end
-		table.sort(keys)
-		return Print("Rings: " .. table.concat(keys, ", "))
+		return Print("Rings: " .. table.concat(ns.RingKeys(), ", "))
 	end
-	local ring = EditableRing(name:lower())
-	if ring then
-		for i, entry in ipairs(ring.slots) do
-			Print(("%d. %s"):format(i, EntryName(entry)))
-		end
-		if #ring.slots == 0 then
-			Print("(empty)")
-		end
+	local key = name:lower()
+	local ring = ForeverRingsDB.rings[key]
+	if not ring then
+		return Print(ns.autoRings[key] and ("'" .. key .. "' fills itself and can't be edited.") or ("No ring named '" .. key .. "'."))
+	end
+	for i, entry in ipairs(ring.slots) do
+		Print(("%d. %s"):format(i, ns.EntryName(entry)))
+	end
+	if #ring.slots == 0 then
+		Print("(empty)")
 	end
 end
 
@@ -271,16 +408,16 @@ function commands.bind(args)
 	if not (key and triggers[key:lower()]) then
 		return Print("Usage: /frings bind <ring> <key>, e.g. /frings bind portals PADLSHOULDER")
 	end
-	SetBindingClick(binding:upper(), "ForeverRingsTrigger_" .. key:lower(), "LeftButton")
-	SaveBindings(GetCurrentBindingSet())
-	Print("Bound " .. binding:upper() .. " to '" .. key:lower() .. "'.")
+	if Check(ns.BindRing(key:lower(), binding:upper())) then
+		Print("Bound " .. binding:upper() .. " to '" .. key:lower() .. "'.")
+	end
 end
 
 function commands.style(name)
 	if name ~= "clean" and name ~= "classic" then
 		return Print("Usage: /frings style clean|classic")
 	end
-	ForeverRingsDB.style = name
+	ns.SetStyle(name)
 	Print("Style: " .. name)
 end
 
@@ -288,9 +425,9 @@ function commands.input(name)
 	if not INPUTS[name] then
 		return Print("Usage: /frings input rstick|lstick|dpad")
 	end
-	ForeverRingsDB.input = name
-	ApplyInput()
-	Print("Aim with: " .. name)
+	if Check(ns.SetInput(name)) then
+		Print("Aim with: " .. name)
+	end
 end
 
 function commands.refresh()
@@ -298,22 +435,31 @@ function commands.refresh()
 	Print("Rings refreshed.")
 end
 
-local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, input = true, refresh = true }
+function commands.config()
+	ns.ToggleConfig()
+end
+
+function commands.help()
+	Print("Bind rings under Options > Keybindings > AddOns > Forever Rings, or with /frings.")
+	Print("Hold the ring button, aim with the stick, release (or press A). B goes back.")
+	Print("/frings new|delete <ring>  ·  add <ring> <link|ring:name>  ·  remove <ring> <n>")
+	Print("/frings list [ring]  ·  bind <ring> <key>  ·  style clean|classic  ·  input rstick|lstick|dpad")
+end
+
+local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, input = true, refresh = true, config = true }
 
 SLASH_FOREVERRINGS1 = "/frings"
 SLASH_FOREVERRINGS2 = "/foreverrings"
 SlashCmdList.FOREVERRINGS = function(msg)
 	local cmd, rest = msg:match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = cmd:lower()
-	local handler = commands[cmd]
-	if handler and SECURE_COMMANDS[cmd] and InCombatLockdown() then
+	if cmd == "" then
+		cmd = "config"
+	end
+	local handler = commands[cmd] or commands.help
+	if SECURE_COMMANDS[cmd] and InCombatLockdown() then
 		Print("Can't change rings in combat.")
-	elseif handler then
-		handler(rest)
 	else
-		Print("Bind rings under Options > Keybindings > AddOns > Forever Rings.")
-		Print("Hold the ring button, aim with the stick, release (or press A). B goes back.")
-		Print("/frings new|delete <ring>  ·  add <ring> <link|ring:name>  ·  remove <ring> <n>")
-		Print("/frings list [ring]  ·  bind <ring> <key>  ·  style clean|classic  ·  input rstick|lstick|dpad")
+		handler(rest)
 	end
 end

@@ -9,7 +9,7 @@ $stage = Join-Path $root "dist\ForeverRings"
 Remove-Item -Recurse -Force (Join-Path $root "dist") -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $stage | Out-Null
 
-$files = "ForeverRings.toc", "Bindings.xml", "Snippets.lua", "Data.lua", "Display.lua", "Core.lua", "README.md", "CHANGELOG.md", "LICENSE"
+$files = "ForeverRings.toc", "Bindings.xml", "Snippets.lua", "Data.lua", "Display.lua", "Core.lua", "Config.lua", "README.md", "CHANGELOG.md", "LICENSE"
 foreach ($f in $files) { Copy-Item (Join-Path $root $f) $stage }
 $toc = Join-Path $stage "ForeverRings.toc"
 $text = [IO.File]::ReadAllText($toc) -replace '@project-version@', $version

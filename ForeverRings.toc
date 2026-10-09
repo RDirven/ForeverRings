@@ -10,3 +10,4 @@ Snippets.lua
 Data.lua
 Display.lua
 Core.lua
+Config.lua

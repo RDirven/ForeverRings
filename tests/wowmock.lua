@@ -8,7 +8,7 @@
 
 local M = {}
 
-local TOC_FILES = { "Snippets.lua", "Data.lua", "Display.lua", "Core.lua" }
+local TOC_FILES = { "Snippets.lua", "Data.lua", "Display.lua", "Core.lua", "Config.lua" }
 
 local function DeepCopy(t)
 	if type(t) ~= "table" then
@@ -29,6 +29,7 @@ function M.New(world)
 		spells = world.spells or {},   -- [spellID] = { name, icon }
 		mounts = world.mounts or {},   -- list of { id, name, spell, icon, usable, favorite, collected, hidden }
 		toys = world.toys or {},       -- [itemID] = true
+		spellbook = world.spellbook or {}, -- list of spellIDs
 		inCombat = false,
 		inSecure = false,
 		bindings = {},
@@ -56,7 +57,12 @@ function M.New(world)
 		return setmetatable({ kind = kind, parent = parent, shown = true, alpha = 1, masks = {} }, Region)
 	end
 	function Region:SetPoint() end
+	function Region:ClearAllPoints() end
 	function Region:SetSize() end
+	function Region:SetWidth() end
+	function Region:SetHeight() end
+	function Region:SetJustifyH() end
+	function Region:SetTextColor(r, g, b) self.textColor = { r, g, b } end
 	function Region:SetAllPoints() end
 	function Region:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
 	function Region:SetTexture(tex) self.texture = tex end
@@ -125,6 +131,10 @@ function M.New(world)
 	function Frame:SetShown(on) if on then self:Show() else self:Hide() end end
 	function Frame:IsShown() return self.shown end
 	function Frame:SetScale(s) self.scale = s end
+	function Frame:SetAlpha(a) self.alpha = a end
+	function Frame:EnableKeyboard(on) self.keyboard = on end
+	function Frame:SetPropagateKeyboardInput(on) self.propagate = on end
+	function Frame:EnableGamePadButton(on) self.gamepad = on end
 	function Frame:SetAttribute(k, v)
 		Blocked(self, "SetAttribute")
 		self.attrs[k] = v
@@ -147,7 +157,7 @@ function M.New(world)
 	-- Restricted-environment handle methods (the mock uses frames as handles).
 	function Frame:SetBindingClick(_, key, buttonName)
 		Blocked(self, "SetBindingClick")
-		self.overrides[key] = buttonName
+		self.overrides[key] = { name = buttonName }
 	end
 	function Frame:ClearBindings()
 		Blocked(self, "ClearBindings")
@@ -167,9 +177,12 @@ function M.New(world)
 
 	-- Simulates a click from a key binding: runs the wrapped snippet, then the
 	-- secure action unless the snippet returned false.
-	local function Click(frame, down)
+	local function Click(frame, down, button)
 		if not frame.clicks[down and "AnyDown" or "AnyUp"] then
 			return
+		end
+		if not frame.wraps.OnClick and frame.scripts.OnClick then
+			return frame.scripts.OnClick(frame, button or "LeftButton", down)
 		end
 		local wrap = frame.wraps.OnClick
 		local result
@@ -194,15 +207,38 @@ function M.New(world)
 			game.Press(key, true)
 			return game.Press(key, false)
 		end
-		local target
+		local override
 		for _, f in ipairs(game.frames) do
 			if f.overrides[key] then
-				target = f.overrides[key]
+				override = f.overrides[key]
 			end
 		end
-		target = target or game.bindings[key]
-		if target then
-			Click(env[target], down)
+		if override then
+			return Click(env[override.name], down, override.button)
+		end
+		local command = game.bindings[key]
+		local clickTarget = command and command:match("^CLICK ([%w_]+):")
+		if clickTarget then
+			Click(env[clickTarget], down)
+		elseif command == "FOREVERRINGS_CONFIG" and down then
+			env.ForeverRings_ToggleConfig()
+		end
+	end
+
+	-- Raw key or gamepad button reaching frames that capture input.
+	function game.KeyDown(key)
+		for _, f in ipairs(game.frames) do
+			if f.shown and f.keyboard and f.scripts.OnKeyDown then
+				return f.scripts.OnKeyDown(f, key)
+			end
+		end
+	end
+
+	function game.GamePadButton(button)
+		for _, f in ipairs(game.frames) do
+			if f.shown and f.gamepad and f.scripts.OnGamePadButtonDown then
+				return f.scripts.OnGamePadButtonDown(f, button)
+			end
 		end
 	end
 
@@ -235,9 +271,15 @@ function M.New(world)
 		return table.remove(game.printed)
 	end
 
+	-- Like the client: PLAYER_REGEN_DISABLED fires just before lockdown starts.
 	function game.SetCombat(on)
-		game.inCombat = on
-		game.Fire(on and "PLAYER_REGEN_DISABLED" or "PLAYER_REGEN_ENABLED")
+		if on then
+			game.Fire("PLAYER_REGEN_DISABLED")
+			game.inCombat = true
+		else
+			game.inCombat = false
+			game.Fire("PLAYER_REGEN_ENABLED")
+		end
 	end
 
 	-- Game API ----------------------------------------------------------------
@@ -264,7 +306,32 @@ function M.New(world)
 		SecureHandlerWrapScript = SecureHandlerWrapScript,
 		InCombatLockdown = function() return game.inCombat end,
 		GetCursorPosition = function() return game.cursor[1], game.cursor[2] end,
-		SetBindingClick = function(key, name) game.bindings[key] = name end,
+		SetBindingClick = function(key, name, button)
+			game.bindings[key] = "CLICK " .. name .. ":" .. (button or "LeftButton")
+		end,
+		SetBinding = function(key, command) game.bindings[key] = command end,
+		GetBindingKey = function(command)
+			local keys = {}
+			for key, c in pairs(game.bindings) do
+				if c == command then
+					keys[#keys + 1] = key
+				end
+			end
+			table.sort(keys)
+			return unpack(keys)
+		end,
+		SetOverrideBindingClick = function(owner, _, key, name, button)
+			if game.inCombat and not game.inSecure then
+				error("ADDON_ACTION_BLOCKED: SetOverrideBindingClick() in combat", 2)
+			end
+			owner.overrides[key] = { name = name, button = button }
+		end,
+		ClearOverrideBindings = function(owner)
+			if game.inCombat and not game.inSecure then
+				error("ADDON_ACTION_BLOCKED: ClearOverrideBindings() in combat", 2)
+			end
+			owner.overrides = {}
+		end,
 		SaveBindings = function() end,
 		GetCurrentBindingSet = function() return 1 end,
 		CopyTable = DeepCopy,
@@ -280,7 +347,35 @@ function M.New(world)
 		NUM_TOTAL_EQUIPPED_BAG_SLOTS = 5,
 		C_Timer = { After = function(_, fn) table.insert(game.timers, fn) end },
 		PlayerHasToy = function(id) return game.toys[id] == true end,
-		C_ToyBox = {},
+		Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } },
+		C_SpellBook = {
+			GetNumSpellBookSkillLines = function() return 1 end,
+			GetSpellBookSkillLineInfo = function()
+				return { itemIndexOffset = 0, numSpellBookItems = #game.spellbook }
+			end,
+			GetSpellBookItemInfo = function(slot)
+				local id = game.spellbook[slot]
+				local spell = game.spells[id]
+				return { itemType = 1, spellID = id, name = spell.name, iconID = spell.icon, isPassive = spell.passive == true }
+			end,
+		},
+		C_ToyBox = {
+			GetNumFilteredToys = function()
+				local n = 0
+				for _ in pairs(game.toys) do n = n + 1 end
+				return n
+			end,
+			GetToyFromIndex = function(i)
+				local ids = {}
+				for id in pairs(game.toys) do ids[#ids + 1] = id end
+				table.sort(ids)
+				return ids[i]
+			end,
+			GetToyInfo = function(id)
+				local it = game.items[id]
+				return id, it and it.name, it and it.icon
+			end,
+		},
 		C_Container = {
 			GetContainerNumSlots = function(bag) return game.bags[bag] and 16 or 0 end,
 			GetContainerItemInfo = function(bag, slot)
