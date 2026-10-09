@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- `/frings remove` now tells you when a slot number doesn't exist instead of doing nothing.
+
 ## 0.1.0
 
 - First release: controller-first radial rings for WoW Forever.
