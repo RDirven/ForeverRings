@@ -10,6 +10,7 @@ local POINTER_RADIUS = 52
 local OPEN_TIME = 0.16        -- seconds for the ring to pop open
 local STAGGER = 0.015         -- extra delay per slot while opening
 local SELECT_SCALE = 1.2
+local STATE_INTERVAL = 0.2    -- seconds between cooldown/usability checks
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local ACCENT = { 0.35, 0.75, 1 }
 local QUESTION_MARK = 134400
@@ -64,6 +65,10 @@ local function CreateSlot(parent)
 	slot.glow:SetBlendMode("ADD")
 	slot.glow:SetAllPoints()
 
+	slot.cooldown = CreateFrame("Cooldown", nil, slot, "CooldownFrameTemplate")
+	slot.cooldown:SetAllPoints(slot.icon)
+	slot.cooldown:SetDrawEdge(false)
+
 	slot.count = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 	slot.count:SetPoint("BOTTOMRIGHT", -2, 2)
 
@@ -78,6 +83,7 @@ local STYLES = {
 	clean = function(display, slot)
 		slot.icon:SetTexCoord(0, 1, 0, 1)
 		slot.icon:AddMaskTexture(slot.iconMask)
+		slot.cooldown:SetSwipeTexture(CIRCLE_MASK)
 		slot.border:Hide()
 		slot.glow:SetAlpha(0)
 		display.backdrop:Show()
@@ -86,6 +92,7 @@ local STYLES = {
 	classic = function(display, slot)
 		slot.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 		slot.icon:RemoveMaskTexture(slot.iconMask)
+		slot.cooldown:SetSwipeTexture("")
 		slot.border:Show()
 		slot.disc:SetAlpha(0)
 		display.backdrop:Hide()
@@ -123,11 +130,34 @@ local function Vibrate()
 	end
 end
 
+-- Start and duration go straight to the Cooldown widget without any math on
+-- them, which also keeps working if the client hides exact values in combat.
+local function Cooldown(slice)
+	if slice.type == "spell" then
+		local info = C_Spell.GetSpellCooldown(slice.value)
+		if info then
+			return info.startTime, info.duration
+		end
+	elseif slice.itemID or slice.type == "toy" then
+		return C_Container.GetItemCooldown(slice.itemID or slice.value)
+	end
+end
+
+-- usable, lacking power
+local function Usable(slice)
+	if slice.type == "spell" then
+		return C_Spell.IsSpellUsable(slice.value)
+	elseif slice.itemID then
+		return C_Item.IsUsableItem(slice.itemID)
+	end
+	return true, false
+end
+
 local Display = {}
 Display.__index = Display
 
 function ns.CreateDisplay(header)
-	local self = setmetatable({ header = header, slots = {}, slices = {}, openAge = 0, time = 0, pointerAngle = 0 }, Display)
+	local self = setmetatable({ header = header, slots = {}, slices = {}, openAge = 0, time = 0, pointerAngle = 0, stateAge = 0 }, Display)
 
 	local frame = CreateFrame("Frame", nil, header)
 	frame:SetAllPoints()
@@ -165,6 +195,7 @@ function Display:Render(key)
 	self.openAge = 0
 	self.selected = nil
 	self.pointer:Hide()
+	self.frame:SetScale(ForeverRingsDB.scale or 1)
 	local n = #self.slices
 	local applyStyle = STYLES[ForeverRingsDB.style] or STYLES.clean
 	for i, slice in ipairs(self.slices) do
@@ -184,7 +215,30 @@ function Display:Render(key)
 	end
 	self:UpdateHint()
 	self:UpdateCounts()
+	self:UpdateState()
 	self:Animate(0)
+end
+
+-- Cooldown swipes and dimming for things you can't use right now.
+function Display:UpdateState()
+	self.stateAge = 0
+	for i, slice in ipairs(self.slices) do
+		local slot = self.slots[i]
+		local start, duration = Cooldown(slice)
+		if start then
+			slot.cooldown:SetCooldown(start, duration)
+		else
+			slot.cooldown:Clear()
+		end
+		local usable, noPower = Usable(slice)
+		if noPower then
+			slot.icon:SetVertexColor(0.45, 0.55, 1)
+		elseif usable == false then
+			slot.icon:SetVertexColor(0.4, 0.4, 0.4)
+		else
+			slot.icon:SetVertexColor(1, 1, 1)
+		end
+	end
 end
 
 function Display:UpdateHint()
@@ -245,6 +299,10 @@ end
 function Display:Animate(elapsed)
 	self.time = self.time + elapsed
 	self.openAge = self.openAge + elapsed
+	self.stateAge = self.stateAge + elapsed
+	if self.stateAge >= STATE_INTERVAL then
+		self:UpdateState()
+	end
 	self.frame:SetAlpha(EaseOut(self.openAge / OPEN_TIME))
 
 	local selected = self:SelectedSlice()

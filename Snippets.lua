@@ -107,8 +107,10 @@ local ACT = [[
 	if not kind then
 		return false
 	end
-	owner:SetAttribute("last:" .. root .. ":t", kind)
-	owner:SetAttribute("last:" .. root .. ":v", value)
+	if value ~= "/frings config" then
+		owner:SetAttribute("last:" .. root .. ":t", kind)
+		owner:SetAttribute("last:" .. root .. ":v", value)
+	end
 ]] .. FIRE
 
 ns.snippets = {

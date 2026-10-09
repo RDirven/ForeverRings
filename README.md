@@ -15,7 +15,9 @@
   - **Markers**: the eight target markers, skull first. Hard to do on a controller otherwise.
 - **Main ring with sub-rings.** One button for everything: Main → Food / Mounts / Bag / Tools / your own rings.
 - **Separate rings too.** Every ring can also get its own button.
-- **Your own rings.** Spells, items and toys, plus other rings as sub-rings.
+- **Your own rings.** Spells, items, toys, mounts, your own **macros**, and other rings as sub-rings.
+- **No keyboard needed.** Setup, buttons, names and settings all work on a controller.
+- **Cooldowns and usability** on every slot.
 - **Share rings.** `/frings export` gives a short code; friends paste it after `/frings import`.
 - **Works in combat.** Picking and using happen in secure code.
 - **Two styles.** *Clean* (round, minimal) or *Classic* (Blizzard borders).
@@ -23,7 +25,7 @@
 
 ## Getting started
 
-1. Type `/frings` (or bind **Open settings**) to open the settings screen.
+1. The settings screen opens by itself the first time. Later: the **Settings** slot in your Main ring, **Options > AddOns > Forever Rings**, or `/frings`.
 2. Select **Main**, press **Y** and press the button you want for it. **L3 or back paddles** work best: you aim with the right stick, and Blizzard's gamepad UI already uses the shoulder buttons for targeting and the triggers as action bar modifiers. (A and B are kept for selecting and going back inside rings.)
 3. Close with **B**. Hold your button, push the stick toward a slot and release.
 
@@ -38,9 +40,9 @@ Fully playable on a controller. Mouse and keyboard work too.
 | **A** | Open a ring, choose a slot, pick an item |
 | **B** | Back / close |
 | **X** | Clear a slot, delete a custom ring (press twice) |
-| **Y** | Set the button that opens a ring |
+| **Y** | Set the button that opens a ring (in the ring editor: rename it) |
 
-Fill slots from **Bags**, **Spells**, **Mounts**, **Toys** or other **Rings** (sub-rings). The preview shows the ring exactly as it will appear.
+Fill slots from **Bags**, **Spells**, **Mounts**, **Toys**, **Macros** or other **Rings** (sub-rings). The preview shows the ring exactly as it will appear.
 
 ## Commands
 

@@ -86,7 +86,9 @@ end)
 
 Test("an untouched old default Main gets Quest and Markers; a custom Main is kept", function()
 	local old = { rings = { main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "tools" } } }, tools = { label = "Tools", slots = {} } } }
-	Eq(#Ring(Login(nil, old), "main"), 6, "upgraded")
+	Eq(#Ring(Login(nil, old), "main"), 7, "upgraded")
+	local v040 = { rings = { main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" } } }, tools = { label = "Tools", slots = {} } } }
+	Eq(#Ring(Login(nil, v040), "main"), 7, "0.4.0 default upgraded too")
 	local custom = { rings = { main = { label = "Main", slots = { { ring = "food" }, { ring = "tools" } } }, tools = { label = "Tools", slots = {} } } }
 	Eq(#Ring(Login(nil, custom), "main"), 2, "kept")
 end)
@@ -176,7 +178,8 @@ end)
 Test("main ring holds the auto rings as sub-rings", function()
 	local g = Login()
 	local h = g.env.ForeverRingsHeader
-	Eq(h:GetAttribute("r:main:n"), 6, "six slots")
+	Eq(h:GetAttribute("r:main:n"), 7, "seven slots")
+	Eq(h:GetAttribute("r:main:v7"), "/frings config", "settings slot last")
 	Eq(h:GetAttribute("r:main:v5"), "markers", "markers in main")
 	Eq(h:GetAttribute("r:main:t1"), "ring", "slot 1 is a ring")
 	Eq(h:GetAttribute("r:main:v1"), "food", "slot 1 opens food")
@@ -241,7 +244,7 @@ Test("B backs out of a sub-ring, then closes", function()
 	g.Press("PADLSHOULDER", true)
 	g.Press("PADRSTICKDOWN", true)
 	g.Press("PADLSHOULDER", false)
-	Eq(h:GetAttribute("active"), "quest", "down = quest ring")
+	Eq(h:GetAttribute("active"), "markers", "down = markers ring")
 	g.Press("PAD2", true)
 	Eq(h:GetAttribute("active"), "main", "back to main")
 	g.Press("PAD2", true)
@@ -260,7 +263,7 @@ Test("the whole flow works in combat without blocked actions", function()
 	g.Press("PADRSTICKDOWN", false)
 	g.Press("PADRSTICKUP", true)
 	g.Press("PAD1", true)
-	Eq(g.casts[1] and g.casts[1].value, "item:202", "quest item in combat")
+	Eq(g.casts[1] and g.casts[1].value, "/tm 8", "marker in combat")
 end)
 
 Test("the fake client does block protected changes in combat", function()
@@ -338,8 +341,8 @@ Test("create a ring, fill it, put it in main, bind and use it", function()
 	Has(g.Slash("add portals |cff71d5ff|Hspell:3565:0|h[Portal: Darnassus]|h|r"), "Added Portal: Darnassus")
 	Has(g.Slash("add portals 6948"), "Added Hearthstone")
 	Has(g.Slash("add main ring:portals"), "Added Ring: Portals")
-	Eq(Ring(g, "main")[7], "portals", "in main ring")
-	Eq(g.ns.resolved.main[7].icon, 4001, "sub-ring borrows first icon")
+	Eq(Ring(g, "main")[8], "portals", "in main ring")
+	Eq(g.ns.resolved.main[8].icon, 4001, "sub-ring borrows first icon")
 	g.Slash("bind portals PADPADDLE1")
 	g.Press("PADPADDLE1", true)
 	g.Press("PADRSTICKUP", true)
@@ -357,7 +360,7 @@ Test("list, remove and delete", function()
 	Has(g.Slash("remove portals 1"), "Removed Portal: Darnassus")
 	Eq(Ring(g, "portals")[1], 1459, "shifted up")
 	Has(g.Slash("delete portals"), "Deleted 'portals'")
-	Eq(#Ring(g, "main"), 6, "removed from main too")
+	Eq(#Ring(g, "main"), 7, "removed from main too")
 	Eq(Ring(g, "portals")[1], nil, "ring gone")
 end)
 
@@ -414,6 +417,32 @@ Test("classic style draws borders and square icons", function()
 	Eq(g.ns.display.backdrop:IsShown(), false, "no backdrop")
 end)
 
+-- Cooldowns and usability -----------------------------------------------------
+
+Test("slots show cooldowns and dim what you can't use", function()
+	local world = World()
+	world.cooldowns = { [458] = { 100, 30 } }
+	world.unusable = { [201] = "power", [6948] = true }
+	local g = Login(world)
+	g.Slash("bind mount M")
+	g.Press("M", true)
+	local cd = g.ns.display.slots[1].cooldown.cd
+	Eq(cd and cd[2], 30, "mount on cooldown")
+	g.Press("M", false)
+	g.Slash("bind bag B")
+	g.Press("B", true)
+	local slots = g.ns.display.slots
+	Eq(slots[1].icon.vertex[3], 1, "potion: not enough power is blue")
+	Eq(slots[1].icon.vertex[1], 0.45, "potion tint")
+	Eq(slots[2].icon.vertex[1], 0.4, "hearthstone unusable is dark")
+	Eq(slots[3].icon.vertex[1], 1, "toy usable")
+	world.unusable[6948] = nil
+	for _ = 1, 15 do
+		g.Update()
+	end
+	Eq(slots[2].icon.vertex[1], 1, "updates while open")
+end)
+
 -- Sharing ---------------------------------------------------------------------
 
 Test("export a ring as a share code in a copy box", function()
@@ -428,6 +457,11 @@ Test("export a ring as a share code in a copy box", function()
 	Eq(box.edit:GetText(), "FR1:Portals:s3565,i6948,rfood", "code")
 	Eq(box.edit.highlighted, true, "selected for Ctrl+C")
 	Has(g.Slash("export food"), "nothing to share", "auto rings can't be exported")
+	g.Slash("add portals ring:food")
+	g.env.ForeverRingsDB.rings.portals.slots[5] = { macro = "Mine" }
+	g.env.ForeverRingsDB.rings.portals.slots[6] = { settings = true }
+	g.Slash("export portals")
+	Eq(g.env.ForeverRingsCopyBox.edit:GetText(), "FR1:Portals:s3565,i6948,rfood,rfood,o", "macros skipped, settings kept")
 end)
 
 Test("import a share code from a friend", function()

@@ -207,6 +207,27 @@ function ns.RingLabel(key)
 	return auto and auto.label or custom and custom.label or key
 end
 
+local QUESTION_MARK = 134400
+ns.SETTINGS_ICON = "Interface\\Icons\\INV_Misc_Gear_01"
+
+-- A slot that opens the settings screen, so controller players never need
+-- to type /frings.
+local function SettingsSlice()
+	return { type = "macro", value = "/frings config", icon = ns.SETTINGS_ICON, name = "Settings" }
+end
+
+-- The player's own WoW macro, by name. Its text is copied into the slot, so
+-- an edited macro updates on the next refresh (UPDATE_MACROS). A deleted one
+-- stays as an empty slot so slot numbers keep matching the saved ring.
+local function MacroSlice(name)
+	local index = GetMacroIndexByName(name)
+	if index and index > 0 then
+		local macroName, icon, body = GetMacroInfo(index)
+		return { type = "macro", value = body, icon = icon, name = macroName, macroName = macroName }
+	end
+	return { name = name .. " (missing)", icon = QUESTION_MARK }
+end
+
 -- Builds the slices of every ring. Sub-ring slots borrow the icon of the
 -- first action in the ring they open.
 function ns.ResolveAll()
@@ -219,6 +240,10 @@ function ns.ResolveAll()
 		for _, entry in ipairs(ring.slots) do
 			if entry.ring then
 				slices[#slices + 1] = { type = "ring", value = entry.ring, name = ns.RingLabel(entry.ring) }
+			elseif entry.settings then
+				slices[#slices + 1] = SettingsSlice()
+			elseif entry.macro then
+				slices[#slices + 1] = MacroSlice(entry.macro)
 			elseif entry.kind == "spell" then
 				slices[#slices + 1] = SpellSlice(entry.id)
 			else
@@ -232,7 +257,7 @@ function ns.ResolveAll()
 			if slice.type == "ring" then
 				local target = resolved[slice.value]
 				local first = target and target[1]
-				slice.icon = first and first.type ~= "ring" and first.icon or 134400
+				slice.icon = first and first.type ~= "ring" and first.icon or QUESTION_MARK
 			end
 		end
 	end

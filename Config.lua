@@ -40,6 +40,8 @@ local state = {
 	pickCategory = 1,
 	pickIndex = 1,
 	settingIndex = 1,
+	nameIndex = 1,
+	welcome = false,
 	capture = nil,      -- ring key, or "config" for the settings button
 	confirmDelete = nil,
 	message = nil,
@@ -119,9 +121,30 @@ local PICKERS = {
 		end,
 	},
 	{
+		label = "Macros",
+		build = function()
+			local list = {}
+			local global, perChar = GetNumMacros()
+			local indexes = {}
+			for i = 1, global do
+				indexes[#indexes + 1] = i
+			end
+			for i = 1, perChar do
+				indexes[#indexes + 1] = MAX_ACCOUNT_MACROS + i
+			end
+			for _, index in ipairs(indexes) do
+				local name, icon = GetMacroInfo(index)
+				if name then
+					list[#list + 1] = { entry = { macro = name }, name = name, icon = icon }
+				end
+			end
+			return SortByName(list)
+		end,
+	},
+	{
 		label = "Rings",
 		build = function(currentKey)
-			local list = {}
+			local list = { { entry = { settings = true }, name = "Settings (this screen)", icon = ns.SETTINGS_ICON } }
 			for _, key in ipairs(ns.RingKeys()) do
 				if key ~= currentKey then
 					local slices = ns.resolved[key]
@@ -132,6 +155,17 @@ local PICKERS = {
 			return list
 		end,
 	},
+}
+
+local WELCOME = "|cff59bfffWelcome to Forever Rings!|r\n\n"
+	.. "1. Main is selected. Press |cffffffffY|r, then the button\n   that should open it (L3 works great).\n"
+	.. "2. Press |cffffffffB|r to close. Hold your button,\n   aim with the right stick, release.\n\n"
+	.. "The Settings slot in Main brings you back here."
+
+-- Names to pick from, since typing on a controller is no fun.
+local NAMES = {
+	"Portals", "Travel", "Buffs", "Pets", "Toys", "Utility", "Combat", "Defensive",
+	"Healing", "Cooldowns", "Professions", "Raid", "PvP", "Fun", "Gathering", "Misc",
 }
 
 -- Settings rows -----------------------------------------------------------------
@@ -161,6 +195,12 @@ local SETTINGS = {
 		value = function() return ns.INPUT_LABELS[ForeverRingsDB.input] end,
 		help = "What you point with while a ring is open.\nA always selects, B always goes back.",
 		change = function(step) return ns.SetInput(Cycle(ns.INPUTS, ForeverRingsDB.input, step)) end,
+	},
+	{
+		label = "Ring size",
+		value = function() return math.floor((ForeverRingsDB.scale or 1) * 100 + 0.5) .. "%" end,
+		help = "How big the rings are on screen.",
+		change = function(step) ns.SetScale(Cycle(ns.SCALES, ForeverRingsDB.scale or 1, step)) return true end,
 	},
 	{
 		label = "Tap to repeat",
@@ -362,11 +402,23 @@ local function RenderRings()
 	end
 	ui.preview:SetAlpha(1)
 
+	if state.mode == "name" then
+		local items = {}
+		for i, name in ipairs(NAMES) do
+			items[i] = { text = name, icon = false }
+		end
+		ui.listTitle:SetText("Name for " .. ns.RingLabel(key))
+		RenderList(items, state.nameIndex)
+		RenderPreview(key)
+		ui.info:SetText("Pick a name. To type your own, use\n/frings new <name> on a keyboard.")
+		return SetHint("A choose   B back")
+	end
+
 	if state.mode == "edit" then
 		local slices = RenderPreview(key, state.slot)
 		if ns.IsEditable(key) then
 			ui.info:SetText(("Slot %d of %d.  Each ring holds up to %d."):format(state.slot, #slices, ns.MAX_SLICES))
-			return SetHint("D-pad slot   A choose   X clear   B back")
+			return SetHint("D-pad slot   A choose   X clear" .. (key ~= "main" and "   Y rename" or "") .. "   B back")
 		end
 		ui.info:SetText("This ring fills itself from your bags and collection.")
 		return SetHint("D-pad look around   B back")
@@ -379,7 +431,7 @@ local function RenderRings()
 	else
 		lines[#lines + 1] = "|cff888888Share it: /frings export " .. key .. "|r"
 	end
-	ui.info:SetText(table.concat(lines, "\n"))
+	ui.info:SetText(state.welcome and WELCOME or table.concat(lines, "\n"))
 	if state.confirmDelete == key then
 		return SetHint("|cffff5555Press X again to delete " .. ns.RingLabel(key) .. "|r   B cancel")
 	end
@@ -440,6 +492,7 @@ local function Close()
 	end
 	state.capture = nil
 	state.confirmDelete = nil
+	state.welcome = false
 	ui.frame:EnableKeyboard(false)
 	ui.frame:EnableGamePadButton(false)
 	if not InCombatLockdown() then
@@ -478,6 +531,19 @@ function actions.rings(action)
 		return
 	end
 
+	if mode == "name" then
+		if action == "up" or action == "down" then
+			state.nameIndex = Move(state.nameIndex, action == "up" and -1 or 1, #NAMES)
+		elseif action == "accept" then
+			if Try(ns.RenameRing(key, NAMES[state.nameIndex])) then
+				state.mode = "edit"
+			end
+		elseif action == "back" then
+			state.mode = "edit"
+		end
+		return
+	end
+
 	if mode == "edit" then
 		local count = #PreviewSlices(key)
 		if action == "left" or action == "up" then
@@ -486,6 +552,8 @@ function actions.rings(action)
 			state.slot = Move(state.slot, 1, count)
 		elseif action == "accept" and ns.IsEditable(key) then
 			state.mode, state.pickIndex = "pick", 1
+		elseif action == "y" and ns.IsEditable(key) and key ~= "main" then
+			state.mode, state.nameIndex = "name", 1
 		elseif action == "x" and ns.IsEditable(key) and ForeverRingsDB.rings[key].slots[state.slot] then
 			if Try(ns.RemoveSlot(key, state.slot)) then
 				state.slot = math.max(1, math.min(state.slot, #ForeverRingsDB.rings[key].slots))
@@ -793,8 +861,52 @@ function ns.ToggleConfig()
 	Render()
 end
 
+-- First login: open on the Main ring with a short how-to.
+function ns.ShowWelcome()
+	ForeverRingsDB.welcomed = true
+	if ui and ui.frame:IsShown() then
+		return
+	end
+	ns.ToggleConfig()
+	state.welcome = true
+	state.tab, state.ringIndex = "rings", 1
+	Render()
+end
+
 function ns.OnRingsChanged()
 	Render()
 end
+
+-- A page under Options > AddOns, reachable with the gamepad menus.
+local function RegisterOptionsPage()
+	if not (Settings and Settings.RegisterCanvasLayoutCategory) then
+		return
+	end
+	local page = CreateFrame("Frame")
+	local title = Text(page, "GameFontNormalLarge")
+	title:SetPoint("TOPLEFT", 16, -16)
+	title:SetText("Forever Rings")
+	local about = Text(page, "GameFontHighlight", 500)
+	about:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+	about:SetJustifyH("LEFT")
+	about:SetText("Rings, buttons and settings live in their own controller-friendly screen.")
+	local open = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+	open:SetSize(220, 32)
+	open:SetPoint("TOPLEFT", about, "BOTTOMLEFT", 0, -16)
+	open:SetText("Open Forever Rings")
+	open:SetScript("OnClick", function()
+		if SettingsPanel and SettingsPanel:IsShown() then
+			HideUIPanel(SettingsPanel)
+		end
+		if not (ui and ui.frame:IsShown()) then
+			ns.ToggleConfig()
+		end
+	end)
+	local category = Settings.RegisterCanvasLayoutCategory(page, "Forever Rings")
+	Settings.RegisterAddOnCategory(category)
+	ns.optionsButton = open -- for tests
+end
+
+RegisterOptionsPage()
 
 ForeverRings_ToggleConfig = ns.ToggleConfig

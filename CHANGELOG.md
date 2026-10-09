@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+- **Fully playable without a keyboard**
+  - First login opens the settings screen with a short welcome, Main already selected.
+  - New **Settings** slot in the Main ring opens the settings screen. (Not remembered for tap to repeat.)
+  - New page under **Options > AddOns > Forever Rings** with an "Open" button.
+  - Rename your own rings by picking a name (Y in the ring editor).
+- **Cooldowns and usability**: slots show cooldown swipes; things you can't use are dimmed, and blue when you lack mana/energy.
+- **Macros**: put your own WoW macros in any ring (picker category "Macros"). Edits to a macro are picked up automatically.
+- **Ring size**: 80% to 150% in Settings.
+- If you never changed your Main ring, it gets the Settings slot automatically.
+
 ## 0.4.0
 
 - **Quest ring**: usable quest items from your bags, filled automatically. (They no longer clutter the Bag ring.)

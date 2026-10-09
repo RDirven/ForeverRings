@@ -28,22 +28,24 @@ local DEFAULTS = {
 	back = "PAD2",
 	tapRepeat = true,
 	vibration = true,
+	scale = 1,
+	welcomed = false,
 	last = {},
 	rings = {
-		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" } } },
+		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" }, { settings = true } } },
 		tools = { label = "Tools", slots = {} },
 	},
 }
 
 -- Main ring layouts that shipped as the default. A Main that still matches
 -- one of these gets upgraded; anything the player changed is left alone.
-local OLD_DEFAULT_MAINS = { "food,mount,bag,tools" }
+local OLD_DEFAULT_MAINS = { "food,mount,bag,tools", "food,mount,bag,quest,markers,tools" }
 
 local function MigrateMain()
 	local main = ForeverRingsDB.rings.main
 	local keys = {}
 	for i, entry in ipairs(main and main.slots or {}) do
-		keys[i] = entry.ring or "?"
+		keys[i] = entry.ring or (entry.settings and "settings") or "?"
 	end
 	local layout = table.concat(keys, ",")
 	for _, old in ipairs(OLD_DEFAULT_MAINS) do
@@ -176,7 +178,17 @@ events:SetScript("OnEvent", function(_, event)
 		events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 		events:RegisterEvent("NEW_MOUNT_ADDED")
 		events:RegisterEvent("NEW_TOY_ADDED")
+		events:RegisterEvent("UPDATE_MACROS")
 		RefreshAll()
+		-- First time: open the settings screen so controller players never
+		-- have to type anything.
+		if not ForeverRingsDB.welcomed then
+			C_Timer.After(2, function()
+				if not InCombatLockdown() and not ForeverRingsDB.welcomed then
+					ns.ShowWelcome()
+				end
+			end)
+		end
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if refreshPending then
 			RefreshAll()
@@ -226,6 +238,10 @@ end
 function ns.EntryName(entry)
 	if entry.ring then
 		return "Ring: " .. ns.RingLabel(entry.ring)
+	elseif entry.settings then
+		return "Settings"
+	elseif entry.macro then
+		return "Macro: " .. entry.macro
 	elseif entry.kind == "spell" then
 		return C_Spell.GetSpellName(entry.id) or ("spell " .. entry.id)
 	end
@@ -367,6 +383,24 @@ function ns.SetTapRepeat(on)
 	return true
 end
 
+function ns.RenameRing(key, label)
+	local ring = ForeverRingsDB.rings[key]
+	if not ring or key == "main" then
+		return nil, "That ring can't be renamed."
+	end
+	ring.label = label
+	if not InCombatLockdown() then
+		RefreshAll()
+	end
+	return true
+end
+
+ns.SCALES = { 0.8, 0.9, 1, 1.1, 1.25, 1.5 }
+
+function ns.SetScale(scale)
+	ForeverRingsDB.scale = scale
+end
+
 function ns.SetVibration(on)
 	ForeverRingsDB.vibration = on
 end
@@ -382,7 +416,8 @@ end
 
 -- Sharing -------------------------------------------------------------------
 -- A ring as one line of text: FR1:<label>:<slot>,<slot>,...
--- with slots s<spellID>, i<itemID> or r<ring key>.
+-- with slots s<spellID>, i<itemID>, r<ring key> or o (settings).
+-- Macros live only on your own account, so they aren't exported.
 
 local SHARE_PREFIX = "FR1"
 
@@ -392,8 +427,14 @@ function ns.ExportRing(key)
 		return nil, ns.autoRings[key] and "'" .. ns.RingLabel(key) .. "' fills itself, so there's nothing to share." or "No ring named '" .. key .. "'."
 	end
 	local slots = {}
-	for i, entry in ipairs(ring.slots) do
-		slots[i] = entry.ring and ("r" .. entry.ring) or ((entry.kind == "spell" and "s" or "i") .. entry.id)
+	for _, entry in ipairs(ring.slots) do
+		if entry.ring then
+			slots[#slots + 1] = "r" .. entry.ring
+		elseif entry.settings then
+			slots[#slots + 1] = "o"
+		elseif entry.kind then
+			slots[#slots + 1] = (entry.kind == "spell" and "s" or "i") .. entry.id
+		end
 	end
 	local label = ring.label:gsub("[^%w ]", "")
 	return SHARE_PREFIX .. ":" .. label .. ":" .. table.concat(slots, ",")
@@ -434,6 +475,8 @@ function ns.ImportRing(code)
 			entry = { kind = "item", id = id }
 		elseif kind == "r" and (ForeverRingsDB.rings[rest] or ns.autoRings[rest]) then
 			entry = { ring = rest }
+		elseif token == "o" then
+			entry = { settings = true }
 		end
 		if entry and #slots < ns.MAX_SLICES then
 			slots[#slots + 1] = entry

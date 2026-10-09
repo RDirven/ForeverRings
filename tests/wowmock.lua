@@ -30,6 +30,10 @@ function M.New(world)
 		mounts = world.mounts or {},   -- list of { id, name, spell, icon, usable, favorite, collected, hidden }
 		toys = world.toys or {},       -- [itemID] = true
 		spellbook = world.spellbook or {}, -- list of spellIDs
+		macros = world.macros or {},   -- list of { name, icon, body, perChar }
+		cooldowns = world.cooldowns or {}, -- [spellID or itemID] = { start, duration }
+		unusable = world.unusable or {}, -- [spellID or itemID] = true | "power"
+		optionsPages = {},
 		inCombat = false,
 		inSecure = false,
 		bindings = {},
@@ -73,6 +77,7 @@ function M.New(world)
 	function Region:SetAlpha(a) self.alpha = a end
 	function Region:GetAlpha() return self.alpha end
 	function Region:SetDesaturated(on) self.desaturated = on end
+	function Region:SetVertexColor(r, g, b) self.vertex = { r, g, b } end
 	function Region:AddMaskTexture(mask) self.masks[mask] = true end
 	function Region:RemoveMaskTexture(mask) self.masks[mask] = nil end
 	function Region:SetText(text) self.text = text ~= nil and tostring(text) or nil end
@@ -156,6 +161,11 @@ function M.New(world)
 	function Frame:CreateMaskTexture() return NewRegion("MaskTexture", self) end
 	function Frame:CreateFontString() local r = NewRegion("FontString", self) table.insert(self.regions, r) return r end
 	-- Restricted-environment handle methods (the mock uses frames as handles).
+	-- Cooldown
+	function Frame:SetDrawEdge() end
+	function Frame:SetSwipeTexture(tex) self.swipe = tex end
+	function Frame:SetCooldown(start, duration) self.cd = { start, duration } end
+	function Frame:Clear() self.cd = nil end
 	-- EditBox
 	function Frame:SetAutoFocus(on) self.autoFocus = on end
 	function Frame:SetText(text) self.text = text end
@@ -343,6 +353,41 @@ function M.New(world)
 		SaveBindings = function() end,
 		GetCurrentBindingSet = function() return 1 end,
 		CopyTable = DeepCopy,
+		MAX_ACCOUNT_MACROS = 120,
+		GetNumMacros = function()
+			local global, perChar = 0, 0
+			for _, m in ipairs(game.macros) do
+				if m.perChar then perChar = perChar + 1 else global = global + 1 end
+			end
+			return global, perChar
+		end,
+		GetMacroInfo = function(index)
+			local list = {}
+			for _, m in ipairs(game.macros) do
+				if (index > 120) == (m.perChar == true) then list[#list + 1] = m end
+			end
+			local m = list[index > 120 and index - 120 or index]
+			if m then
+				return m.name, m.icon, m.body
+			end
+		end,
+		GetMacroIndexByName = function(name)
+			local g, c = 0, 0
+			for _, m in ipairs(game.macros) do
+				if m.perChar then c = c + 1 else g = g + 1 end
+				if m.name == name then
+					return m.perChar and 120 + c or g
+				end
+			end
+			return 0
+		end,
+		Settings = {
+			RegisterCanvasLayoutCategory = function(frame, name)
+				return { frame = frame, name = name }
+			end,
+			RegisterAddOnCategory = function(category) table.insert(game.optionsPages, category) end,
+		},
+		HideUIPanel = function(frame) frame:Hide() end,
 		print = function(...)
 			local parts = {}
 			for i = 1, select("#", ...) do
@@ -389,6 +434,10 @@ function M.New(world)
 			end,
 		},
 		C_Container = {
+			GetItemCooldown = function(id)
+				local cd = game.cooldowns[id]
+				return cd and cd[1] or 0, cd and cd[2] or 0, 1
+			end,
 			GetContainerNumSlots = function(bag) return game.bags[bag] and 16 or 0 end,
 			GetContainerItemInfo = function(bag, slot)
 				local id = game.bags[bag] and game.bags[bag][slot]
@@ -414,6 +463,10 @@ function M.New(world)
 				return it and not it.uncached and it.name or nil
 			end,
 			GetItemCount = Count,
+			IsUsableItem = function(id)
+				local u = game.unusable[id]
+				return not u, u == "power"
+			end,
 			GetItemSpell = function(id)
 				local it = Item(id)
 				if it and it.spell then
@@ -423,6 +476,14 @@ function M.New(world)
 			end,
 		},
 		C_Spell = {
+			GetSpellCooldown = function(id)
+				local cd = game.cooldowns[id]
+				return { startTime = cd and cd[1] or 0, duration = cd and cd[2] or 0, isEnabled = true, modRate = 1 }
+			end,
+			IsSpellUsable = function(id)
+				local u = game.unusable[id]
+				return not u, u == "power"
+			end,
 			GetSpellTexture = function(id) return game.spells[id] and game.spells[id].icon end,
 			GetSpellName = function(id)
 				if game.spells[id] then

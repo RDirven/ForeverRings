@@ -20,6 +20,7 @@ local function World()
 		},
 		spellbook = { 3565, 1459, 999 },
 		mounts = { { id = 1, name = "Swift Gryphon", spell = 458, icon = 5001, favorite = true } },
+		macros = { { name = "Shout", icon = 7001, body = "/y For the Horde!" } },
 	}
 end
 
@@ -156,7 +157,7 @@ Test("put a ring inside Main", function()
 	Pad(g, "down", "down")                  -- past "+ New ring", wrap to Main
 	Eq(g.ns.configUI.ringKeys[st.ringIndex], "main", "on main")
 	Pad(g, "A", "left")                     -- the + slot after 4 sub-rings
-	Eq(st.slot, 7, "on + slot")
+	Eq(st.slot, 8, "on + slot")
 	Pad(g, "A", "LB", "LB")                 -- picker remembered Spells; LB twice wraps to Rings
 	Has(ui.listTitle:GetText(), "|cffffffffRings", "rings category")
 	for i = 1, 10 do
@@ -165,7 +166,7 @@ Test("put a ring inside Main", function()
 		end
 	end
 	Pad(g, "A")
-	Eq(g.env.ForeverRingsDB.rings.main.slots[7].ring, "ring1", "ring1 in main")
+	Eq(g.env.ForeverRingsDB.rings.main.slots[8].ring, "ring1", "ring1 in main")
 end)
 
 Test("the ring itself is not offered as its own sub-ring", function()
@@ -241,13 +242,13 @@ end)
 Test("X twice deletes a custom ring and removes it from Main", function()
 	local g, ui, st = Open()
 	Pad(g, "up", "A", "B")                  -- create ring1
-	g.ns.SetSlot("main", 7, { ring = "ring1" })
+	g.ns.SetSlot("main", 8, { ring = "ring1" })
 	Pad(g, "X")
 	Has(ui.hint:GetText(), "Press X again", "confirm")
 	Eq(g.env.ForeverRingsDB.rings.ring1 ~= nil, true, "not yet")
 	Pad(g, "X")
 	Eq(g.env.ForeverRingsDB.rings.ring1, nil, "deleted")
-	Eq(#g.env.ForeverRingsDB.rings.main.slots, 6, "removed from main")
+	Eq(#g.env.ForeverRingsDB.rings.main.slots, 7, "removed from main")
 end)
 
 Test("moving away cancels a pending delete", function()
@@ -269,7 +270,7 @@ Test("settings tab: style, aim and settings button", function()
 	Eq(g.env.ForeverRingsHeader:GetAttribute("key-up"), "PADLSTICKUP", "applied to rings")
 	Pad(g, "left")
 	Eq(g.env.ForeverRingsDB.input, "rstick", "back to right stick")
-	Pad(g, "down", "down", "down", "A")     -- past Tap to repeat and Vibration
+	Pad(g, "down", "down", "down", "down", "A") -- past Ring size, Tap to repeat and Vibration
 	Eq(st.capture, "config", "capturing settings button")
 	g.GamePadButton("PADSOCIAL")
 	Pad(g, "B")
@@ -282,8 +283,8 @@ end)
 
 Test("settings: tap to repeat and vibration toggles", function()
 	local g, ui, st = Open()
-	Pad(g, "RB", "down", "down")
-	Has(RowText(ui, 3), "Tap to repeat", "row")
+	Pad(g, "RB", "down", "down", "down")
+	Has(RowText(ui, 4), "Tap to repeat", "row")
 	Pad(g, "A")
 	Eq(g.env.ForeverRingsDB.tapRepeat, false, "off")
 	Eq(g.env.ForeverRingsHeader:GetAttribute("tap-repeat"), nil, "secure flag off")
@@ -328,6 +329,103 @@ Test("toggle via its own binding and via /frings config", function()
 	Eq(ui.frame:IsShown(), false, "toggled off")
 	g.env.ForeverRings_ToggleConfig()
 	Eq(ui.frame:IsShown(), true, "toggled on")
+end)
+
+-- Controller-only setup ------------------------------------------------------
+
+Test("first login opens the screen with a welcome on Main", function()
+	local world = World()
+	local g = WoW.New(world).Login()
+	g.RunTimers()
+	local ui, st = g.ns.configUI, g.ns.configState
+	Eq(ui.frame:IsShown(), true, "opened by itself")
+	Has(ui.info:GetText(), "Welcome to Forever Rings", "welcome text")
+	Eq(ui.ringKeys[st.ringIndex], "main", "Main selected")
+	Pad(g, "Y")
+	g.GamePadButton("PADLSTICK")
+	Pad(g, "B")
+	Eq(g.env.GetBindingKey(g.ns.TriggerCommand("main")), "PADLSTICK", "set up without a keyboard")
+	local again = WoW.New(World()).Login(g.env.ForeverRingsDB)
+	again.RunTimers()
+	Eq(again.ns.configUI, nil, "only the first time")
+end)
+
+Test("the Settings slot in Main opens this screen and isn't remembered for tap", function()
+	local g = WoW.New(World()).Login({ welcomed = true })
+	g.RunTimers()
+	g.Slash("bind main PADLSTICK")
+	g.Press("PADLSTICK", true)
+	g.Press("PADRSTICKUP", true)
+	g.Press("PADRSTICKLEFT", true)  -- up-left = slot 7 of 7
+	g.Press("PADLSTICK", false)
+	Eq(g.casts[1] and g.casts[1].value, "/frings config", "settings macro")
+	Eq(g.env.ForeverRingsHeader:GetAttribute("last:main:t"), nil, "not stored as last used")
+end)
+
+Test("Options > AddOns has a page with an open button", function()
+	local g = WoW.New(World()).Login({ welcomed = true })
+	Eq(g.optionsPages[1] and g.optionsPages[1].name, "Forever Rings", "registered")
+	g.ns.optionsButton.scripts.OnClick()
+	Eq(g.env.ForeverRingsConfig:IsShown(), true, "opens the screen")
+end)
+
+Test("rename a ring by picking a name", function()
+	local g, ui, st = Open()
+	Pad(g, "up", "A")                  -- new Ring1, editing
+	Pad(g, "Y")
+	Eq(st.mode, "name", "name picker")
+	Pad(g, "down", "A")
+	Eq(g.env.ForeverRingsDB.rings.ring1.label, "Travel", "renamed")
+	Eq(st.mode, "edit", "back to editor")
+	Pad(g, "B")
+	Has(RowText(ui, st.ringIndex), "Travel", "new name in list")
+	Pad(g, "down", "down", "A", "Y")   -- wrap to Main
+	Eq(st.mode, "edit", "Main can't be renamed")
+end)
+
+Test("macros: pick your own macro, it follows edits, and survives deletion", function()
+	local world = World()
+	local g = WoW.New(world).Login({ welcomed = true })
+	g.Slash("")
+	local ui, st = g.ns.configUI, g.ns.configState
+	Pad(g, "up", "A", "A", "RB", "RB", "RB", "RB")
+	Has(ui.listTitle:GetText(), "|cffffffffMacros", "macros category")
+	Has(RowText(ui, 1), "Shout", "macro listed")
+	Pad(g, "A")
+	local h = g.env.ForeverRingsHeader
+	Eq(h:GetAttribute("r:ring1:t1"), "macro", "macro slot")
+	Eq(h:GetAttribute("r:ring1:v1"), "/y For the Horde!", "macro text")
+	world.macros[1].body = "/y For the Alliance!"
+	g.Fire("UPDATE_MACROS")
+	g.RunTimers()
+	Eq(h:GetAttribute("r:ring1:v1"), "/y For the Alliance!", "follows edits")
+	table.remove(world.macros, 1)
+	g.Fire("UPDATE_MACROS")
+	g.RunTimers()
+	Eq(h:GetAttribute("r:ring1:t1"), nil, "no action")
+	Has(g.ns.resolved.ring1[1].name, "(missing)", "shown as missing")
+	Eq(#g.env.ForeverRingsDB.rings.ring1.slots, 1, "slot kept")
+end)
+
+Test("Settings can be put in any ring from the Rings picker", function()
+	local g, ui, st = Open()
+	Pad(g, "up", "A", "A", "LB")
+	Has(RowText(ui, 1), "Settings", "first entry")
+	Pad(g, "A")
+	Eq(g.env.ForeverRingsDB.rings.ring1.slots[1].settings, true, "added")
+end)
+
+Test("ring size setting scales the ring", function()
+	local g, ui, st = Open()
+	Pad(g, "RB", "down", "down")
+	Has(RowText(ui, 3), "Ring size", "row")
+	Pad(g, "right")
+	Eq(g.env.ForeverRingsDB.scale, 1.1, "bigger")
+	Has(ui.rows[3].right:GetText(), "110%", "shown")
+	Pad(g, "B")
+	g.Slash("bind food F")
+	g.Press("F", true)
+	Eq(g.ns.display.frame.scale, 1.1, "ring drawn bigger")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))
