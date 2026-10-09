@@ -19,7 +19,7 @@
 ## Getting started
 
 1. Type `/frings` (or bind **Open settings**) to open the settings screen.
-2. Select **Main**, press **Y** and press the button you want for it, for example a shoulder button. (A and B are kept for selecting and going back inside rings.)
+2. Select **Main**, press **Y** and press the button you want for it. **L3, R3 or back paddles** work best: Blizzard's gamepad UI already uses the shoulder buttons for targeting and the triggers as action bar modifiers. (A and B are kept for selecting and going back inside rings.)
 3. Close with **B**. Hold your button, push the stick toward a slot and release.
 
 ## Settings screen
@@ -48,7 +48,7 @@ Everything in the settings screen is also available as a command (`/frings help`
 | `/frings add main ring:<name>` | Put a ring inside the main ring |
 | `/frings remove <ring> <n>` | Remove slot *n* (see `/frings list <ring>`) |
 | `/frings delete <name>` | Delete a ring |
-| `/frings bind <ring> <key>` | Bind a ring directly, e.g. `PADLSHOULDER` |
+| `/frings bind <ring> <key>` | Bind a ring directly, e.g. `PADRSTICK` (R3) or `PADPADDLE1` |
 | `/frings style clean\|classic` | Switch style |
 | `/frings input rstick\|lstick\|dpad` | Choose what you aim with |
 

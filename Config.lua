@@ -392,7 +392,7 @@ Render = function()
 	RenderTabs()
 	if state.capture then
 		local target = state.capture == "config" and "the settings screen" or ns.RingLabel(state.capture)
-		ui.capture:SetText("Press the button for " .. target .. "\n\n|cff888888B or Esc cancels|r")
+		ui.capture:SetText("Press the button for " .. target .. "\n\n|cff888888L3, R3 or paddles work best.\nB or Esc cancels.|r")
 		ui.capture:Show()
 		SetHint("")
 		return
@@ -569,7 +569,8 @@ local function FinishCapture(key)
 		Say("Settings button: " .. key)
 		state.capture = nil
 	elseif Try(ns.BindRing(target, key)) then
-		Say(ns.RingLabel(target) .. " button: " .. key)
+		local warning = ns.BindingWarning(key)
+		Say(ns.RingLabel(target) .. " button: " .. key .. (warning and ("  " .. warning) or ""))
 		state.capture = nil
 	end
 	ui.frame:EnableKeyboard(false)

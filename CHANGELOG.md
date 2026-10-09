@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Recommend L3, R3 or paddles for ring buttons, and warn when binding a ring to a button Blizzard's gamepad UI already uses (shoulders for targeting, triggers as modifiers).
+
 ## 0.2.0
 
 - New settings screen, built for controllers: type `/frings` or bind "Open settings".

@@ -164,7 +164,8 @@ end)
 Test("hold LB, stick up into Food, A picks the best food", function()
 	local g = Login()
 	local h, display = g.env.ForeverRingsHeader, g.ns.display
-	Has(g.Slash("bind main PADLSHOULDER"), "Bound PADLSHOULDER")
+	Has(g.Slash("bind main PADLSHOULDER"), "targets allies", "warned")
+	Has(g.printed[#g.printed], "Bound PADLSHOULDER", "bound")
 
 	g.Press("PADLSHOULDER", true)
 	Eq(h:IsShown(), true, "ring open")
@@ -341,6 +342,12 @@ Test("commands refuse bad input", function()
 	Has(g.Slash("style neon"), "Usage")
 	Has(g.Slash("input wheel"), "Usage")
 	Has(g.Slash("help"), "/frings")
+end)
+
+Test("/frings bind warns for buttons Blizzard's gamepad UI uses", function()
+	local g = Login()
+	Has(g.Slash("bind food PADLTRIGGER"), "action bar modifier", "trigger warning")
+	Has(g.Slash("bind food PADLSTICK"), "Bound PADLSTICK", "no warning for L3")
 end)
 
 Test("full ring refuses a 9th slot", function()

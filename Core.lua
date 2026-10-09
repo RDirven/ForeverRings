@@ -270,6 +270,21 @@ function ns.RemoveSlot(key, index)
 	return entry
 end
 
+-- Buttons Blizzard's own gamepad UI already uses. Allowed, but worth a warning.
+local GAMEPAD_UI_KEYS = {
+	PADLSHOULDER = "targets allies",
+	PADRSHOULDER = "targets enemies",
+	PADLTRIGGER = "is an action bar modifier",
+	PADRTRIGGER = "is an action bar modifier",
+}
+
+function ns.BindingWarning(binding)
+	local use = binding and GAMEPAD_UI_KEYS[binding]
+	if use then
+		return "Note: in Blizzard's gamepad UI this button " .. use .. ". L3, R3 or paddles work best."
+	end
+end
+
 function ns.TriggerCommand(key)
 	return "CLICK ForeverRingsTrigger_" .. key .. ":LeftButton"
 end
@@ -406,10 +421,14 @@ end
 function commands.bind(args)
 	local key, binding = args:match("^(%S+)%s+(%S+)$")
 	if not (key and triggers[key:lower()]) then
-		return Print("Usage: /frings bind <ring> <key>, e.g. /frings bind portals PADLSHOULDER")
+		return Print("Usage: /frings bind <ring> <key>, e.g. /frings bind portals PADRSTICK (R3)")
 	end
 	if Check(ns.BindRing(key:lower(), binding:upper())) then
 		Print("Bound " .. binding:upper() .. " to '" .. key:lower() .. "'.")
+		local warning = ns.BindingWarning(binding:upper())
+		if warning then
+			Print(warning)
+		end
 	end
 end
 
