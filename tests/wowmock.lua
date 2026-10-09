@@ -156,6 +156,13 @@ function M.New(world)
 	function Frame:CreateMaskTexture() return NewRegion("MaskTexture", self) end
 	function Frame:CreateFontString() local r = NewRegion("FontString", self) table.insert(self.regions, r) return r end
 	-- Restricted-environment handle methods (the mock uses frames as handles).
+	-- EditBox
+	function Frame:SetAutoFocus(on) self.autoFocus = on end
+	function Frame:SetText(text) self.text = text end
+	function Frame:GetText() return self.text end
+	function Frame:HighlightText() self.highlighted = true end
+	function Frame:SetFocus() self.focused = true end
+	function Frame:ClearFocus() self.focused = false end
 	function Frame:SetBindingClick(_, key, buttonName)
 		Blocked(self, "SetBindingClick")
 		self.overrides[key] = { name = buttonName }
@@ -197,7 +204,7 @@ function M.New(world)
 		if result ~= false then
 			local kind = frame.attrs.type
 			if kind then
-				table.insert(game.casts, { type = kind, value = frame.attrs[kind] })
+				table.insert(game.casts, { type = kind, value = frame.attrs[kind == "macro" and "macrotext" or kind] })
 			end
 		end
 	end

@@ -80,7 +80,7 @@ Test("/frings opens the screen and takes over the gamepad", function()
 	Eq(ui.frame.overrides.PAD1.name, "ForeverRingsConfigInput", "A bound")
 	Has(RowText(ui, 1), "Main", "first row")
 	Has(RowText(ui, 2), "Food", "second row")
-	Has(RowText(ui, 6), "New ring", "last row")
+	Has(RowText(ui, 8), "New ring", "last row")
 	Has(ui.hint:GetText(), "A edit", "hint")
 	Lacks(ui.hint:GetText(), "X delete", "main can't be deleted")
 end)
@@ -156,16 +156,16 @@ Test("put a ring inside Main", function()
 	Pad(g, "down", "down")                  -- past "+ New ring", wrap to Main
 	Eq(g.ns.configUI.ringKeys[st.ringIndex], "main", "on main")
 	Pad(g, "A", "left")                     -- the + slot after 4 sub-rings
-	Eq(st.slot, 5, "on + slot")
+	Eq(st.slot, 7, "on + slot")
 	Pad(g, "A", "LB", "LB")                 -- picker remembered Spells; LB twice wraps to Rings
 	Has(ui.listTitle:GetText(), "|cffffffffRings", "rings category")
-	for i = 1, 5 do
+	for i = 1, 10 do
 		if RowText(ui, i) == "Ring1" then
 			for _ = 1, i - 1 do Pad(g, "down") end
 		end
 	end
 	Pad(g, "A")
-	Eq(g.env.ForeverRingsDB.rings.main.slots[5].ring, "ring1", "ring1 in main")
+	Eq(g.env.ForeverRingsDB.rings.main.slots[7].ring, "ring1", "ring1 in main")
 end)
 
 Test("the ring itself is not offered as its own sub-ring", function()
@@ -200,13 +200,16 @@ end)
 Test("binding a shoulder button works but warns about Blizzard's gamepad UI", function()
 	local g, ui, st = Open()
 	Pad(g, "Y")
-	Has(ui.capture:GetText(), "L3, R3 or paddles", "tip in prompt")
+	Has(ui.capture:GetText(), "L3 or paddles", "tip in prompt")
 	g.GamePadButton("PADRSHOULDER")
 	Eq(g.env.GetBindingKey(g.ns.TriggerCommand("main")), "PADRSHOULDER", "still bound")
 	Has(ui.hint:GetText(), "targets enemies", "warning")
 	Pad(g, "Y")
+	g.GamePadButton("PADLSTICK")
+	Lacks(ui.hint:GetText(), "Note:", "no warning for L3")
+	Pad(g, "Y")
 	g.GamePadButton("PADRSTICK")
-	Lacks(ui.hint:GetText(), "Note:", "no warning for R3")
+	Has(ui.hint:GetText(), "you aim with this stick", "warning for R3 while aiming with the right stick")
 end)
 
 Test("B cancels button capture", function()
@@ -238,13 +241,13 @@ end)
 Test("X twice deletes a custom ring and removes it from Main", function()
 	local g, ui, st = Open()
 	Pad(g, "up", "A", "B")                  -- create ring1
-	g.ns.SetSlot("main", 5, { ring = "ring1" })
+	g.ns.SetSlot("main", 7, { ring = "ring1" })
 	Pad(g, "X")
 	Has(ui.hint:GetText(), "Press X again", "confirm")
 	Eq(g.env.ForeverRingsDB.rings.ring1 ~= nil, true, "not yet")
 	Pad(g, "X")
 	Eq(g.env.ForeverRingsDB.rings.ring1, nil, "deleted")
-	Eq(#g.env.ForeverRingsDB.rings.main.slots, 4, "removed from main")
+	Eq(#g.env.ForeverRingsDB.rings.main.slots, 6, "removed from main")
 end)
 
 Test("moving away cancels a pending delete", function()

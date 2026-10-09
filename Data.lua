@@ -9,6 +9,7 @@ local CLASS_CONSUMABLE = 0
 local SUBCLASS_FOOD_DRINK = 5
 local CLASS_WEAPON = 2
 local CLASS_ARMOR = 4
+local CLASS_QUEST = 12
 
 local function ItemSlice(itemID)
 	local slice = {
@@ -64,12 +65,34 @@ local function IsFood(itemID)
 	return classID == CLASS_CONSUMABLE and subClassID == SUBCLASS_FOOD_DRINK
 end
 
+-- Usable items for the Bag ring; quest items get their own ring.
 local function IsUsable(itemID)
 	local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
-	if classID == CLASS_WEAPON or classID == CLASS_ARMOR or IsFood(itemID) then
+	if classID == CLASS_WEAPON or classID == CLASS_ARMOR or classID == CLASS_QUEST or IsFood(itemID) then
 		return false
 	end
 	return C_Item.GetItemSpell(itemID) ~= nil
+end
+
+local function IsQuestUsable(itemID)
+	local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
+	return classID == CLASS_QUEST and C_Item.GetItemSpell(itemID) ~= nil
+end
+
+-- Raid target markers, skull first. /tm on an already marked target clears it.
+local MARKER_NAMES = { "Star", "Circle", "Diamond", "Triangle", "Moon", "Square", "Cross", "Skull" }
+
+local function MarkerSlices()
+	local slices = {}
+	for i = 8, 1, -1 do
+		slices[#slices + 1] = {
+			type = "macro",
+			value = "/tm " .. i,
+			icon = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. i,
+			name = _G["RAID_TARGET_" .. i] or MARKER_NAMES[i],
+		}
+	end
+	return slices
 end
 
 -- The spells behind food and drink items are named "Food" and "Drink" (in the
@@ -142,6 +165,20 @@ ns.autoRings = {
 			end
 			return slices
 		end,
+	},
+	quest = {
+		label = "Quest",
+		build = function()
+			local slices = {}
+			for i, id in ipairs(Truncate(ScanBags(IsQuestUsable))) do
+				slices[i] = ItemSlice(id)
+			end
+			return slices
+		end,
+	},
+	markers = {
+		label = "Markers",
+		build = MarkerSlices,
 	},
 	-- Favorites first; all usable mounts when nothing is favorited.
 	mount = {

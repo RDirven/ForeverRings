@@ -95,6 +95,13 @@ local STYLES = {
 
 -- Name for a stored action, for the "Tap:" hint.
 local function ActionName(kind, value)
+	for _, slices in pairs(ns.resolved or {}) do
+		for _, slice in ipairs(slices) do
+			if slice.type == kind and slice.value == value and slice.name then
+				return slice.name
+			end
+		end
+	end
 	if kind == "spell" then
 		return C_Spell.GetSpellName(value)
 	elseif kind == "toy" then
@@ -102,8 +109,6 @@ local function ActionName(kind, value)
 	elseif kind == "item" then
 		local id = tonumber(tostring(value):match("(%d+)"))
 		return id and C_Item.GetItemNameByID(id)
-	elseif kind == "macro" then
-		return "Eat & Drink"
 	end
 end
 

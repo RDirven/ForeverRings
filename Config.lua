@@ -376,6 +376,8 @@ local function RenderRings()
 	local lines = { "Button: " .. BindingText(ns.GetRingBinding(key)) }
 	if ns.autoRings[key] then
 		lines[#lines + 1] = "Fills itself from your bags and collection."
+	else
+		lines[#lines + 1] = "|cff888888Share it: /frings export " .. key .. "|r"
 	end
 	ui.info:SetText(table.concat(lines, "\n"))
 	if state.confirmDelete == key then
@@ -404,7 +406,7 @@ Render = function()
 	RenderTabs()
 	if state.capture then
 		local target = state.capture == "config" and "the settings screen" or ns.RingLabel(state.capture)
-		ui.capture:SetText("Press the button for " .. target .. "\n\n|cff888888L3, R3 or paddles work best.\nB or Esc cancels.|r")
+		ui.capture:SetText("Press the button for " .. target .. "\n\n|cff888888" .. ns.ButtonTip() .. "\nB or Esc cancels.|r")
 		ui.capture:Show()
 		SetHint("")
 		return
@@ -728,6 +730,51 @@ local function Build()
 		end
 	end)
 	frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+end
+
+-- Copy box for share codes. Copying needs a keyboard (Ctrl+C); WoW has no
+-- clipboard API for addons.
+local copyBox
+
+function ns.ShowCopyBox(title, text)
+	if not copyBox then
+		copyBox = CreateFrame("Frame", "ForeverRingsCopyBox", UIParent)
+		copyBox:SetSize(460, 110)
+		copyBox:SetPoint("TOP", 0, -140)
+		copyBox:SetFrameStrata("FULLSCREEN_DIALOG")
+		copyBox:EnableMouse(true)
+		local bg = Fill(copyBox, "BACKGROUND", 0.05, 0.06, 0.09, 0.97)
+		bg:SetAllPoints()
+		local bar = Fill(copyBox, "BORDER", ACCENT[1], ACCENT[2], ACCENT[3], 1)
+		bar:SetPoint("TOPLEFT")
+		bar:SetPoint("TOPRIGHT")
+		bar:SetHeight(3)
+		copyBox.title = Text(copyBox, "GameFontNormal")
+		copyBox.title:SetPoint("TOP", 0, -14)
+		local edit = CreateFrame("EditBox", nil, copyBox, "InputBoxTemplate")
+		edit:SetSize(400, 24)
+		edit:SetPoint("CENTER", 0, -2)
+		edit:SetAutoFocus(false)
+		edit:SetScript("OnEscapePressed", function() copyBox:Hide() end)
+		edit:SetScript("OnEnterPressed", function() copyBox:Hide() end)
+		-- Read-only: typing puts the code back.
+		edit:SetScript("OnTextChanged", function(self, userInput)
+			if userInput then
+				self:SetText(copyBox.code)
+				self:HighlightText()
+			end
+		end)
+		copyBox.edit = edit
+		local hint = Text(copyBox, "GameFontDisableSmall")
+		hint:SetPoint("BOTTOM", 0, 12)
+		hint:SetText("Ctrl+C to copy, Esc to close. Friends paste it after /frings import")
+	end
+	copyBox.code = text
+	copyBox.title:SetText(title)
+	copyBox.edit:SetText(text)
+	copyBox:Show()
+	copyBox.edit:SetFocus()
+	copyBox.edit:HighlightText()
 end
 
 function ns.ToggleConfig()

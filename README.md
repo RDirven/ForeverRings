@@ -11,9 +11,12 @@
   - **Food**: food & drink from your bags, best first, plus one **Eat & Drink** slot that does both at once.
   - **Bag**: every usable item (potions, scrolls, quest items…).
   - **Mounts**: your favorites, or all usable mounts.
+  - **Quest**: usable quest items.
+  - **Markers**: the eight target markers, skull first. Hard to do on a controller otherwise.
 - **Main ring with sub-rings.** One button for everything: Main → Food / Mounts / Bag / Tools / your own rings.
 - **Separate rings too.** Every ring can also get its own button.
 - **Your own rings.** Spells, items and toys, plus other rings as sub-rings.
+- **Share rings.** `/frings export` gives a short code; friends paste it after `/frings import`.
 - **Works in combat.** Picking and using happen in secure code.
 - **Two styles.** *Clean* (round, minimal) or *Classic* (Blizzard borders).
 - Keyboard and mouse work too: aim by moving the mouse.
@@ -21,7 +24,7 @@
 ## Getting started
 
 1. Type `/frings` (or bind **Open settings**) to open the settings screen.
-2. Select **Main**, press **Y** and press the button you want for it. **L3, R3 or back paddles** work best: Blizzard's gamepad UI already uses the shoulder buttons for targeting and the triggers as action bar modifiers. (A and B are kept for selecting and going back inside rings.)
+2. Select **Main**, press **Y** and press the button you want for it. **L3 or back paddles** work best: you aim with the right stick, and Blizzard's gamepad UI already uses the shoulder buttons for targeting and the triggers as action bar modifiers. (A and B are kept for selecting and going back inside rings.)
 3. Close with **B**. Hold your button, push the stick toward a slot and release.
 
 ## Settings screen
@@ -50,7 +53,9 @@ Everything in the settings screen is also available as a command (`/frings help`
 | `/frings add main ring:<name>` | Put a ring inside the main ring |
 | `/frings remove <ring> <n>` | Remove slot *n* (see `/frings list <ring>`) |
 | `/frings delete <name>` | Delete a ring |
-| `/frings bind <ring> <key>` | Bind a ring directly, e.g. `PADRSTICK` (R3) or `PADPADDLE1` |
+| `/frings bind <ring> <key>` | Bind a ring directly, e.g. `PADLSTICK` (L3) or `PADPADDLE1` |
+| `/frings export <ring>` | Get a share code for a ring |
+| `/frings import <code>` | Add a ring from a share code |
 | `/frings style clean\|classic` | Switch style |
 | `/frings input rstick\|lstick\|dpad` | Choose what you aim with |
 

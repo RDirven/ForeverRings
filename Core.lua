@@ -6,6 +6,8 @@ _G["BINDING_NAME_CLICK ForeverRingsTrigger_main:LeftButton"] = "Main ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_food:LeftButton"] = "Food ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_bag:LeftButton"] = "Bag ring (usable items)"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_mount:LeftButton"] = "Mount ring"
+_G["BINDING_NAME_CLICK ForeverRingsTrigger_quest:LeftButton"] = "Quest items ring"
+_G["BINDING_NAME_CLICK ForeverRingsTrigger_markers:LeftButton"] = "Target markers ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_tools:LeftButton"] = "Tools ring"
 
 local INPUTS = {
@@ -28,10 +30,28 @@ local DEFAULTS = {
 	vibration = true,
 	last = {},
 	rings = {
-		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "tools" } } },
+		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" } } },
 		tools = { label = "Tools", slots = {} },
 	},
 }
+
+-- Main ring layouts that shipped as the default. A Main that still matches
+-- one of these gets upgraded; anything the player changed is left alone.
+local OLD_DEFAULT_MAINS = { "food,mount,bag,tools" }
+
+local function MigrateMain()
+	local main = ForeverRingsDB.rings.main
+	local keys = {}
+	for i, entry in ipairs(main and main.slots or {}) do
+		keys[i] = entry.ring or "?"
+	end
+	local layout = table.concat(keys, ",")
+	for _, old in ipairs(OLD_DEFAULT_MAINS) do
+		if layout == old then
+			main.slots = CopyTable(DEFAULTS.rings.main.slots)
+		end
+	end
+end
 
 local header
 local triggers = {}
@@ -149,6 +169,7 @@ events:SetScript("OnEvent", function(_, event)
 				ForeverRingsDB[k] = type(v) == "table" and CopyTable(v) or v
 			end
 		end
+		MigrateMain()
 		CreateHeader()
 		events:RegisterEvent("BAG_UPDATE_DELAYED")
 		events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -173,7 +194,7 @@ end)
 -- changes secure state, so it returns nil plus a message when in combat.
 
 local COMBAT = "Can't change rings in combat."
-local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, tools = 5 }
+local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, quest = 5, markers = 6, tools = 7 }
 
 -- main, the auto rings, tools, then custom rings alphabetically.
 function ns.RingKeys()
@@ -291,10 +312,21 @@ local GAMEPAD_UI_KEYS = {
 	PADRTRIGGER = "is an action bar modifier",
 }
 
+-- Clicking the stick you aim with means pressing and tilting it at once.
+local AIM_STICK_CLICK = { rstick = "PADRSTICK", lstick = "PADLSTICK" }
+
+-- The stick you don't aim with, as a button name for tips.
+function ns.ButtonTip()
+	local free = ForeverRingsDB.input == "lstick" and "R3" or "L3"
+	return free .. " or paddles work best."
+end
+
 function ns.BindingWarning(binding)
 	local use = binding and GAMEPAD_UI_KEYS[binding]
 	if use then
-		return "Note: in Blizzard's gamepad UI this button " .. use .. ". L3, R3 or paddles work best."
+		return "Note: in Blizzard's gamepad UI this button " .. use .. ". " .. ns.ButtonTip()
+	elseif binding and binding == AIM_STICK_CLICK[ForeverRingsDB.input] then
+		return "Note: you aim with this stick, so holding it down while aiming is awkward. " .. ns.ButtonTip()
 	end
 end
 
@@ -346,6 +378,72 @@ function ns.SetInput(name)
 	ForeverRingsDB.input = name
 	ApplyInput()
 	return true
+end
+
+-- Sharing -------------------------------------------------------------------
+-- A ring as one line of text: FR1:<label>:<slot>,<slot>,...
+-- with slots s<spellID>, i<itemID> or r<ring key>.
+
+local SHARE_PREFIX = "FR1"
+
+function ns.ExportRing(key)
+	local ring = ForeverRingsDB.rings[key]
+	if not ring then
+		return nil, ns.autoRings[key] and "'" .. ns.RingLabel(key) .. "' fills itself, so there's nothing to share." or "No ring named '" .. key .. "'."
+	end
+	local slots = {}
+	for i, entry in ipairs(ring.slots) do
+		slots[i] = entry.ring and ("r" .. entry.ring) or ((entry.kind == "spell" and "s" or "i") .. entry.id)
+	end
+	local label = ring.label:gsub("[^%w ]", "")
+	return SHARE_PREFIX .. ":" .. label .. ":" .. table.concat(slots, ",")
+end
+
+-- Creates a new ring from a share code. Sub-rings the player doesn't have are
+-- skipped. Returns the new key and how many slots were skipped.
+function ns.ImportRing(code)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	local prefix, label, list = (code or ""):match("^%s*(%w+):([%w ]*):([%w,]*)%s*$")
+	if prefix ~= SHARE_PREFIX then
+		return nil, "That doesn't look like a Forever Rings code."
+	end
+	label = label:match("^%s*(.-)%s*$"):sub(1, 24)
+	if label == "" then
+		label = "Shared"
+	end
+	local base = label:lower():gsub("[^%w]", "")
+	if base == "" then
+		base = "shared"
+	end
+	local key, n = base, 1
+	while ForeverRingsDB.rings[key] or ns.autoRings[key] do
+		n = n + 1
+		key = base .. n
+	end
+
+	local slots, skipped = {}, 0
+	for token in list:gmatch("[^,]+") do
+		local kind, rest = token:sub(1, 1), token:sub(2)
+		local id = tonumber(rest)
+		local entry
+		if kind == "s" and id then
+			entry = { kind = "spell", id = id }
+		elseif kind == "i" and id then
+			entry = { kind = "item", id = id }
+		elseif kind == "r" and (ForeverRingsDB.rings[rest] or ns.autoRings[rest]) then
+			entry = { ring = rest }
+		end
+		if entry and #slots < ns.MAX_SLICES then
+			slots[#slots + 1] = entry
+		else
+			skipped = skipped + 1
+		end
+	end
+	ForeverRingsDB.rings[key] = { label = n > 1 and (label .. " " .. n) or label, slots = slots }
+	RefreshAll()
+	return key, skipped
 end
 
 -- Slash commands ------------------------------------------------------------
@@ -447,7 +545,7 @@ end
 function commands.bind(args)
 	local key, binding = args:match("^(%S+)%s+(%S+)$")
 	if not (key and triggers[key:lower()]) then
-		return Print("Usage: /frings bind <ring> <key>, e.g. /frings bind portals PADRSTICK (R3)")
+		return Print("Usage: /frings bind <ring> <key>, e.g. /frings bind portals PADLSTICK (L3)")
 	end
 	if Check(ns.BindRing(key:lower(), binding:upper())) then
 		Print("Bound " .. binding:upper() .. " to '" .. key:lower() .. "'.")
@@ -475,6 +573,23 @@ function commands.input(name)
 	end
 end
 
+function commands.export(name)
+	local code = Check(ns.ExportRing(name:lower()))
+	if code then
+		ns.ShowCopyBox("Share " .. ns.RingLabel(name:lower()), code)
+	end
+end
+
+function commands.import(code)
+	local key, skipped = ns.ImportRing(code)
+	if not key then
+		Print(skipped)
+	else
+		Print("Imported '" .. ns.RingLabel(key) .. "'." .. (skipped > 0 and (" Skipped " .. skipped .. " slot(s) you don't have.") or "")
+			.. " Add it to Main with: /frings add main ring:" .. key)
+	end
+end
+
 function commands.refresh()
 	RefreshAll()
 	Print("Rings refreshed.")
@@ -489,9 +604,10 @@ function commands.help()
 	Print("Hold the ring button, aim with the stick, release (or press A). B goes back.")
 	Print("/frings new|delete <ring>  ·  add <ring> <link|ring:name>  ·  remove <ring> <n>")
 	Print("/frings list [ring]  ·  bind <ring> <key>  ·  style clean|classic  ·  input rstick|lstick|dpad")
+	Print("/frings export <ring>  ·  import <code>   share rings with friends")
 end
 
-local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, input = true, refresh = true, config = true }
+local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, input = true, refresh = true, config = true, import = true }
 
 SLASH_FOREVERRINGS1 = "/frings"
 SLASH_FOREVERRINGS2 = "/foreverrings"

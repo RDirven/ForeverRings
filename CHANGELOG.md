@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- **Quest ring**: usable quest items from your bags, filled automatically. (They no longer clutter the Bag ring.)
+- **Markers ring**: all eight target markers, skull first. Pick one again to clear it.
+- **Share rings**: `/frings export <ring>` gives a code to copy; friends load it with `/frings import <code>`.
+- Main ring now also holds Quest and Markers. If you never changed your Main ring, it's updated for you.
+- The button tip now depends on the stick you aim with (L3 or paddles when aiming with the right stick), with a warning when you pick the stick you aim with.
+
 ## 0.3.0
 
 - **Tap to repeat**: tap a ring button without aiming to use the last thing you picked from that ring again. Remembered across reloads. Can be turned off in Settings.
