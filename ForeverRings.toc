@@ -2,7 +2,7 @@
 ## Title: Forever Rings
 ## Notes: Controller-first radial rings for WoW Forever. Food, usable items and mounts fill themselves from your bags.
 ## Author: Robert-Jan
-## Version: 0.1.0
+## Version: @project-version@
 ## SavedVariables: ForeverRingsDB
 ## X-Curse-Project-ID: 1734762
 
