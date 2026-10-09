@@ -72,6 +72,42 @@ local function IsUsable(itemID)
 	return C_Item.GetItemSpell(itemID) ~= nil
 end
 
+-- The spells behind food and drink items are named "Food" and "Drink" (in the
+-- client's language), so compare against the names of the base spells.
+local FOOD_SPELL, DRINK_SPELL = 433, 430
+
+local function FoodAndDrink(itemID)
+	local spellName = C_Item.GetItemSpell(itemID)
+	if not spellName then
+		return false, false
+	end
+	local food = C_Spell.GetSpellName(FOOD_SPELL) or "Food"
+	local drink = C_Spell.GetSpellName(DRINK_SPELL) or "Drink"
+	return spellName:find(food, 1, true) ~= nil, spellName:find(drink, 1, true) ~= nil
+end
+
+-- One slot that eats the best food and drinks the best drink at once.
+local function EatAndDrinkSlice(sortedIDs)
+	local foodID, drinkID
+	for _, id in ipairs(sortedIDs) do
+		local isFood, isDrink = FoodAndDrink(id)
+		if isFood and not isDrink and not foodID then
+			foodID = id
+		elseif isDrink and not isFood and not drinkID then
+			drinkID = id
+		end
+	end
+	if foodID and drinkID then
+		return {
+			type = "macro",
+			value = ("/use item:%d\n/use item:%d"):format(foodID, drinkID),
+			icon = C_Item.GetItemIconByID(foodID),
+			icon2 = C_Item.GetItemIconByID(drinkID),
+			name = "Eat & Drink",
+		}
+	end
+end
+
 local function ItemLevel(itemID)
 	return select(4, C_Item.GetItemInfo(itemID)) or 0
 end
@@ -90,10 +126,11 @@ ns.autoRings = {
 				return C_Item.GetItemCount(a) > C_Item.GetItemCount(b)
 			end)
 			local slices = {}
-			for i, id in ipairs(Truncate(ids)) do
-				slices[i] = ItemSlice(id)
+			slices[1] = EatAndDrinkSlice(ids)
+			for _, id in ipairs(ids) do
+				slices[#slices + 1] = ItemSlice(id)
 			end
-			return slices
+			return Truncate(slices)
 		end,
 	},
 	bag = {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- **Tap to repeat**: tap a ring button without aiming to use the last thing you picked from that ring again. Remembered across reloads. Can be turned off in Settings.
+- **Eat & Drink**: the Food ring now starts with one slot that eats your best food and drinks your best drink at the same time.
+- **Vibration**: a short rumble when the stick moves to another slot (Settings → Vibration).
+- **Animations**: rings pop open, the selected slot grows with a soft pulse, and a pointer swings toward where you aim.
+
 ## 0.2.1
 
 - Recommend L3, R3 or paddles for ring buttons, and warn when binding a ring to a button Blizzard's gamepad UI already uses (shoulders for targeting, triggers as modifiers).

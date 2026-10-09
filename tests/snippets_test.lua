@@ -214,5 +214,65 @@ Test("empty ring closes on release", function()
 	Eq(header.shown, false, "closed")
 end)
 
+Test("tap repeats the last action used from that ring", function()
+	header.attrs["tap-repeat"] = true
+	local t = Handle({ ring = "food" })
+	Run("trigger", t, true)
+	Dir("left", true)
+	Run("trigger", t, false)
+	Dir("left", false)
+	Eq(t.attrs.item, "item:7", "first use")
+	t.attrs.item = nil
+	Run("trigger", t, true)
+	Eq(Run("trigger", t, false), nil, "tap fires")
+	Eq(t.attrs.item, "item:7", "repeated")
+	Eq(header.shown, false, "closed")
+end)
+
+Test("touching the stick and returning to center cancels instead of repeating", function()
+	header.attrs["tap-repeat"] = true
+	header.attrs["last:food:t"], header.attrs["last:food:v"] = "item", "item:3"
+	local t = Handle({ ring = "food" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Dir("up", false)
+	Eq(Run("trigger", t, false), false, "cancelled")
+	Eq(t.attrs.type, nil, "nothing fired")
+end)
+
+Test("tap does nothing when the option is off", function()
+	header.attrs["last:food:t"], header.attrs["last:food:v"] = "item", "item:3"
+	local t = Handle({ ring = "food" })
+	Run("trigger", t, true)
+	Eq(Run("trigger", t, false), false, "cancelled")
+end)
+
+Test("actions from a sub-ring count as last used for the ring you opened", function()
+	header.attrs["tap-repeat"] = true
+	local t = Handle({ ring = "main" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Run("trigger", t, false)        -- into food
+	Dir("up", false)
+	Dir("right", true)
+	Run("confirm", Handle({}), true) -- food slice 3
+	Eq(header.attrs["last:main:t"], "item", "stored under main")
+	Eq(header.attrs["last:main:v"], "item:3", "value")
+	Dir("right", false)
+	Run("trigger", t, true)
+	Run("trigger", t, false)
+	Eq(t.attrs.item, "item:3", "tapping main repeats it")
+end)
+
+Test("macro slices load their text into macrotext", function()
+	Ring("food", { { "macro", "/use item:1\n/use item:2" } })
+	local t = Handle({ ring = "food" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Run("trigger", t, false)
+	Eq(t.attrs.type, "macro", "type")
+	Eq(t.attrs.macrotext, "/use item:1\n/use item:2", "macrotext")
+end)
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

@@ -163,6 +163,18 @@ local SETTINGS = {
 		change = function(step) return ns.SetInput(Cycle(ns.INPUTS, ForeverRingsDB.input, step)) end,
 	},
 	{
+		label = "Tap to repeat",
+		value = function() return ForeverRingsDB.tapRepeat and "On" or "Off" end,
+		help = "Tap a ring button without aiming to use the\nlast thing you picked from that ring again.",
+		change = function() return ns.SetTapRepeat(not ForeverRingsDB.tapRepeat) end,
+	},
+	{
+		label = "Vibration",
+		value = function() return ForeverRingsDB.vibration and "On" or "Off" end,
+		help = "A short rumble when the stick moves to another slot.",
+		change = function() ns.SetVibration(not ForeverRingsDB.vibration) return true end,
+	},
+	{
 		label = "Settings button",
 		value = function() return BindingText(GetBindingKey("FOREVERRINGS_CONFIG")) end,
 		help = "Press A, then the button that should open this screen.\nOr type /frings.",

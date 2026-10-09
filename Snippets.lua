@@ -5,11 +5,13 @@ local _, ns = ...
 --
 -- Header attributes (set out of combat by Core.lua):
 --   r:<ring>:n          number of slices
---   r:<ring>:t<i>       "item" | "toy" | "spell" | "ring"
+--   r:<ring>:t<i>       "item" | "toy" | "spell" | "macro" | "ring"
 --   r:<ring>:v<i>       action value, or the sub-ring key for "ring"
 --   key-up/right/down/left, key-confirm, key-back   gamepad keys
+--   tap-repeat          tapping a ring button repeats its last action
 -- Runtime state:
---   active, sticky, depth, stack<d>, held-<dir>, mx0/my0
+--   active, sticky, depth, stack<d>, held-<dir>, moved, mx0/my0
+--   last:<ring>:t / last:<ring>:v   last action used from each ring
 
 ns.DEAD_ZONE = 40
 
@@ -40,6 +42,15 @@ local CLOSE = [[
 	owner:SetAttribute("held-right", nil)
 	owner:SetAttribute("held-down", nil)
 	owner:SetAttribute("held-left", nil)
+	owner:SetAttribute("moved", nil)
+]]
+
+-- Expects `kind` and `value`. Loads the action into self; the secure click
+-- that follows performs it. Macros keep their text in "macrotext".
+local FIRE = [[
+	self:SetAttribute("type", kind)
+	self:SetAttribute("typerelease", kind)
+	self:SetAttribute(kind == "macro" and "macrotext" or kind, value)
 ]]
 
 -- Sets locals `key` and `pick`. The stick direction wins; otherwise the mouse
@@ -70,8 +81,8 @@ local PICK = ([[
 	end
 ]]):format(ns.DEAD_ZONE * ns.DEAD_ZONE)
 
--- Expects `key`, `pick`, `closeIfNothing`. Enters a sub-ring, or loads the
--- action into self so the secure click that follows performs it.
+-- Expects `key`, `pick`, `closeIfNothing`. Enters a sub-ring, or fires the
+-- action and remembers it as the last one used from the ring that was opened.
 local ACT = [[
 	if not pick then
 		if closeIfNothing then
@@ -90,17 +101,19 @@ local ACT = [[
 ]] .. OPEN .. [[
 		return false
 	end
+	local depth = owner:GetAttribute("depth") or 0
+	local root = depth > 0 and owner:GetAttribute("stack1") or key
 ]] .. CLOSE .. [[
 	if not kind then
 		return false
 	end
-	self:SetAttribute("type", kind)
-	self:SetAttribute("typerelease", kind)
-	self:SetAttribute(kind, value)
-]]
+	owner:SetAttribute("last:" .. root .. ":t", kind)
+	owner:SetAttribute("last:" .. root .. ":v", value)
+]] .. FIRE
 
 ns.snippets = {
-	-- Ring button: press opens the ring, release picks.
+	-- Ring button: press opens the ring, release picks. A quick tap without
+	-- touching the stick repeats the last action from this ring.
 	trigger = [[
 	if down then
 		if not owner:IsShown() then
@@ -114,7 +127,16 @@ ns.snippets = {
 		return false
 	end
 	local closeIfNothing = true
-]] .. PICK .. ACT,
+]] .. PICK .. [[
+	if not pick and owner:GetAttribute("tap-repeat") and not owner:GetAttribute("sticky") and not owner:GetAttribute("moved") then
+		local kind = owner:GetAttribute("last:" .. key .. ":t")
+		local value = owner:GetAttribute("last:" .. key .. ":v")
+		if kind then
+]] .. CLOSE .. FIRE .. [[
+			return
+		end
+	end
+]] .. ACT,
 
 	-- A: pick without closing when nothing is selected.
 	confirm = [[
@@ -143,6 +165,9 @@ ns.snippets = {
 	-- Stick/D-pad directions: diagonals are two held directions at once.
 	direction = [[
 	owner:SetAttribute("held-" .. self:GetAttribute("dir"), down or nil)
+	if down then
+		owner:SetAttribute("moved", true)
+	end
 	return false
 ]],
 }

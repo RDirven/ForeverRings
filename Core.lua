@@ -24,6 +24,9 @@ local DEFAULTS = {
 	input = "rstick",
 	confirm = "PAD1",
 	back = "PAD2",
+	tapRepeat = true,
+	vibration = true,
+	last = {},
 	rings = {
 		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "tools" } } },
 		tools = { label = "Tools", slots = {} },
@@ -65,6 +68,7 @@ local function ApplyInput()
 	end
 	header:SetAttribute("key-confirm", ForeverRingsDB.confirm)
 	header:SetAttribute("key-back", ForeverRingsDB.back)
+	header:SetAttribute("tap-repeat", ForeverRingsDB.tapRepeat or nil)
 end
 
 local function CreateHeader()
@@ -82,6 +86,15 @@ local function CreateHeader()
 	SecureButton("ForeverRingsBack", ns.snippets.back, { "AnyDown" })
 
 	ApplyInput()
+	for name, value in pairs(ForeverRingsDB.last) do
+		header:SetAttribute(name, value)
+	end
+	-- The snippets record the last action per ring; keep it across reloads.
+	header:HookScript("OnAttributeChanged", function(_, name, value)
+		if name:sub(1, 5) == "last:" then
+			ForeverRingsDB.last[name] = value
+		end
+	end)
 	ns.display = ns.CreateDisplay(header)
 end
 
@@ -311,6 +324,19 @@ end
 
 function ns.SetStyle(name)
 	ForeverRingsDB.style = name
+end
+
+function ns.SetTapRepeat(on)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.tapRepeat = on
+	ApplyInput()
+	return true
+end
+
+function ns.SetVibration(on)
+	ForeverRingsDB.vibration = on
 end
 
 function ns.SetInput(name)

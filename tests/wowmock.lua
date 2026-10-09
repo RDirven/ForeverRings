@@ -34,6 +34,7 @@ function M.New(world)
 		inSecure = false,
 		bindings = {},
 		casts = {},
+		vibrations = 0,
 		printed = {},
 		timers = {},
 		cursor = { 960, 540 },
@@ -346,6 +347,10 @@ function M.New(world)
 		NUM_BAG_SLOTS = 4,
 		NUM_TOTAL_EQUIPPED_BAG_SLOTS = 5,
 		C_Timer = { After = function(_, fn) table.insert(game.timers, fn) end },
+		C_GamePad = {
+			SetVibration = function() game.vibrations = game.vibrations + 1 end,
+			StopVibration = function() end,
+		},
 		PlayerHasToy = function(id) return game.toys[id] == true end,
 		Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } },
 		C_SpellBook = {
@@ -405,13 +410,23 @@ function M.New(world)
 			GetItemSpell = function(id)
 				local it = Item(id)
 				if it and it.spell then
-					return "Use", it.spell
+					local spell = game.spells[it.spell]
+					return spell and spell.name or "Use", it.spell
 				end
 			end,
 		},
 		C_Spell = {
 			GetSpellTexture = function(id) return game.spells[id] and game.spells[id].icon end,
-			GetSpellName = function(id) return game.spells[id] and game.spells[id].name end,
+			GetSpellName = function(id)
+				if game.spells[id] then
+					return game.spells[id].name
+				end
+				for _, m in ipairs(game.mounts) do
+					if m.spell == id then
+						return m.name
+					end
+				end
+			end,
 		},
 		C_MountJournal = {
 			GetMountIDs = function()

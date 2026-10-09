@@ -175,7 +175,8 @@ Test("hold LB, stick up into Food, A picks the best food", function()
 	g.Press("PADRSTICKUP", true)
 	g.Update()
 	Eq(display.title:GetText(), "Food", "highlighted food")
-	Eq(display.slots[1].disc:GetAlpha(), 1, "clean highlight")
+	assert(display.slots[1].disc:GetAlpha() > 0.5, "clean highlight")
+	Eq(display.slots[2].disc:GetAlpha(), 0, "others not highlighted")
 
 	g.Press("PADLSHOULDER", false)
 	Eq(h:IsShown(), true, "food stays open")
@@ -376,8 +377,108 @@ Test("classic style draws borders and square icons", function()
 	local slot = g.ns.display.slots[1]
 	Eq(slot.border:IsShown(), true, "border")
 	Eq(next(slot.icon.masks), nil, "no round mask")
-	Eq(slot.glow:GetAlpha(), 1, "glow on selection")
+	assert(slot.glow:GetAlpha() > 0.5, "glow on selection")
 	Eq(g.ns.display.backdrop:IsShown(), false, "no backdrop")
+end)
+
+-- Eat & Drink, tap to repeat, vibration, animation ---------------------------
+
+local function FoodWorld()
+	local world = World()
+	world.spells[433] = { name = "Food", icon = 1 }
+	world.spells[430] = { name = "Drink", icon = 2 }
+	world.items[101].spell = 433 -- Roasted Boar: food
+	world.items[102].spell = 433 -- Mage Bread: food (better)
+	world.items[103].spell = 430 -- Sweet Water: drink
+	return world
+end
+
+Test("food ring starts with Eat & Drink using the best of each", function()
+	local g = Login(FoodWorld())
+	local h = g.env.ForeverRingsHeader
+	Eq(h:GetAttribute("r:food:t1"), "macro", "macro slot")
+	Eq(h:GetAttribute("r:food:v1"), "/use item:102\n/use item:103", "best food + drink")
+	Eq(g.ns.resolved.food[1].name, "Eat & Drink", "name")
+	Eq(g.ns.resolved.food[1].icon2, 1003, "drink icon")
+	Eq(#Ring(g, "food"), 4, "plus the 3 items")
+	g.Slash("bind food F")
+	g.Press("F", true)
+	g.Press("PADRSTICKUP", true)
+	g.Press("F", false)
+	Eq(g.casts[1].type, "macro", "cast macro")
+end)
+
+Test("no Eat & Drink slot without both food and drink", function()
+	local world = FoodWorld()
+	world.items[103].spell = 433 -- no drink left
+	Eq(Login(world).env.ForeverRingsHeader:GetAttribute("r:food:t1"), "item", "plain items")
+end)
+
+Test("tap repeats, shows a hint, and survives a reload", function()
+	local g = Login()
+	g.Slash("bind mount M")
+	g.Press("M", true)
+	g.Press("PADRSTICKUP", true)
+	g.Press("M", false)
+	g.Press("PADRSTICKUP", false)
+	g.Press("M", true)
+	g.Update()
+	Has(g.ns.display.hint:GetText(), "Tap: Swift Gryphon", "hint")
+	g.Press("M", false)
+	Eq(#g.casts, 2, "tap cast again")
+	Eq(g.casts[2].value, 458, "same mount")
+
+	local saved = g.env.ForeverRingsDB
+	local g2 = WoW.New(World()).Login(saved)
+	g2.SetCombat(false)
+	g2.bindings.M = "CLICK ForeverRingsTrigger_mount:LeftButton"
+	g2.Press("M", true)
+	g2.Press("M", false)
+	Eq(g2.casts[1] and g2.casts[1].value, 458, "remembered after reload")
+end)
+
+Test("vibrates when the stick moves to another slot, not for the mouse", function()
+	local g = Login()
+	g.Slash("bind food F")
+	g.Press("F", true)
+	g.Update()
+	Eq(g.vibrations, 0, "nothing yet")
+	g.Press("PADRSTICKUP", true)
+	g.Update()
+	g.Update()
+	Eq(g.vibrations, 1, "one buzz per change")
+	g.Press("PADRSTICKUP", false)
+	g.Press("PADRSTICKRIGHT", true)
+	g.Update()
+	Eq(g.vibrations, 2, "buzz on new slot")
+	g.Press("F", false)
+	g.Press("PADRSTICKRIGHT", false)
+	g.Press("F", true)
+	g.cursor = { 1040, 540 }
+	g.Update()
+	Eq(g.vibrations, 2, "no buzz for mouse")
+	g.env.ForeverRingsDB.vibration = false
+	g.Press("PADRSTICKUP", true)
+	g.Update()
+	Eq(g.vibrations, 2, "off means off")
+end)
+
+Test("ring pops open and settles", function()
+	local g = Login()
+	g.Slash("bind food F")
+	g.Press("F", true)
+	local frame = g.ns.display.frame
+	assert(frame.alpha < 0.2, "starts faded: " .. tostring(frame.alpha))
+	for _ = 1, 20 do
+		g.Update()
+	end
+	Eq(frame.alpha, 1, "fully visible")
+	g.Press("PADRSTICKUP", true)
+	for _ = 1, 30 do
+		g.Update()
+	end
+	assert(math.abs(g.ns.display.slots[1].scale - 1.2) < 0.01, "selected slot grew")
+	Eq(g.ns.display.pointer:IsShown(), true, "pointer visible")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

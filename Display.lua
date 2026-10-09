@@ -1,12 +1,18 @@
 local _, ns = ...
 
 -- Insecure visuals only. The secure header decides what happens; this file
--- just draws the active ring and highlights the slice that would be picked.
+-- draws the active ring, animates it and highlights the slice that would be
+-- picked. Nothing here is protected, so it all keeps running in combat.
 
 local RADIUS = 120
 local ICON_SIZE = 46
+local POINTER_RADIUS = 52
+local OPEN_TIME = 0.16        -- seconds for the ring to pop open
+local STAGGER = 0.015         -- extra delay per slot while opening
+local SELECT_SCALE = 1.2
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local ACCENT = { 0.35, 0.75, 1 }
+local QUESTION_MARK = 134400
 
 local function AddCircleMask(frame, texture)
 	local mask = frame:CreateMaskTexture()
@@ -16,9 +22,20 @@ local function AddCircleMask(frame, texture)
 	return mask
 end
 
+local function EaseOut(p)
+	p = math.max(0, math.min(1, p))
+	return 1 - (1 - p) ^ 3
+end
+
+-- Moves `current` toward `target` at a frame-rate independent speed.
+local function Approach(current, target, elapsed, speed)
+	return current + (target - current) * math.min(1, elapsed * speed)
+end
+
 local function CreateSlot(parent)
 	local slot = CreateFrame("Frame", nil, parent)
 	slot:SetSize(ICON_SIZE, ICON_SIZE)
+	slot.scale = 1
 
 	-- Clean: accent disc behind the icon when selected.
 	slot.disc = slot:CreateTexture(nil, "BACKGROUND")
@@ -30,6 +47,12 @@ local function CreateSlot(parent)
 	slot.icon = slot:CreateTexture(nil, "ARTWORK")
 	slot.icon:SetAllPoints()
 	slot.iconMask = AddCircleMask(slot, slot.icon)
+
+	-- Second, smaller icon (the drink of "Eat & Drink").
+	slot.icon2 = slot:CreateTexture(nil, "ARTWORK", nil, 1)
+	slot.icon2:SetSize(ICON_SIZE * 0.5, ICON_SIZE * 0.5)
+	slot.icon2:SetPoint("BOTTOMRIGHT", 4, -4)
+	AddCircleMask(slot, slot.icon2)
 
 	-- Classic: action button border plus additive glow.
 	slot.border = slot:CreateTexture(nil, "OVERLAY")
@@ -58,6 +81,7 @@ local STYLES = {
 		slot.border:Hide()
 		slot.glow:SetAlpha(0)
 		display.backdrop:Show()
+		display.pointer:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 1)
 	end,
 	classic = function(display, slot)
 		slot.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
@@ -65,14 +89,40 @@ local STYLES = {
 		slot.border:Show()
 		slot.disc:SetAlpha(0)
 		display.backdrop:Hide()
+		display.pointer:SetColorTexture(1, 0.82, 0, 1)
 	end,
 }
+
+-- Name for a stored action, for the "Tap:" hint.
+local function ActionName(kind, value)
+	if kind == "spell" then
+		return C_Spell.GetSpellName(value)
+	elseif kind == "toy" then
+		return C_Item.GetItemNameByID(value)
+	elseif kind == "item" then
+		local id = tonumber(tostring(value):match("(%d+)"))
+		return id and C_Item.GetItemNameByID(id)
+	elseif kind == "macro" then
+		return "Eat & Drink"
+	end
+end
+
+local function Vibrate()
+	if ForeverRingsDB.vibration and C_GamePad and C_GamePad.SetVibration then
+		C_GamePad.SetVibration("Low", 0.35)
+		C_Timer.After(0.05, function()
+			if C_GamePad.StopVibration then
+				C_GamePad.StopVibration()
+			end
+		end)
+	end
+end
 
 local Display = {}
 Display.__index = Display
 
 function ns.CreateDisplay(header)
-	local self = setmetatable({ header = header, slots = {}, slices = {} }, Display)
+	local self = setmetatable({ header = header, slots = {}, slices = {}, openAge = 0, time = 0, pointerAngle = 0 }, Display)
 
 	local frame = CreateFrame("Frame", nil, header)
 	frame:SetAllPoints()
@@ -84,12 +134,18 @@ function ns.CreateDisplay(header)
 	self.backdrop:SetColorTexture(0, 0, 0, 0.55)
 	AddCircleMask(frame, self.backdrop)
 
+	-- Dot that swings toward the slot the stick points at.
+	self.pointer = frame:CreateTexture(nil, "ARTWORK")
+	self.pointer:SetSize(10, 10)
+	AddCircleMask(frame, self.pointer)
+	self.pointer:Hide()
+
 	self.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 	self.title:SetPoint("CENTER", 0, 8)
 	self.hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 	self.hint:SetPoint("TOP", self.title, "BOTTOM", 0, -4)
 
-	frame:SetScript("OnUpdate", function() self:UpdateHighlight() end)
+	frame:SetScript("OnUpdate", function(_, elapsed) self:Animate(elapsed or 0) end)
 	header:HookScript("OnAttributeChanged", function(_, name, value)
 		if name == "active" and value then
 			self:Render(value)
@@ -101,15 +157,19 @@ end
 function Display:Render(key)
 	self.key = key
 	self.slices = ns.resolved and ns.resolved[key] or {}
+	self.openAge = 0
+	self.selected = nil
+	self.pointer:Hide()
 	local n = #self.slices
 	local applyStyle = STYLES[ForeverRingsDB.style] or STYLES.clean
 	for i, slice in ipairs(self.slices) do
 		local slot = self.slots[i] or CreateSlot(self.frame)
 		self.slots[i] = slot
-		local angle = math.rad((i - 1) * 360 / n)
-		slot:ClearAllPoints()
-		slot:SetPoint("CENTER", self.frame, "CENTER", math.sin(angle) * RADIUS, math.cos(angle) * RADIUS)
-		slot.icon:SetTexture(slice.icon or 134400)
+		slot.angle = (i - 1) * 360 / n
+		slot.scale = 1
+		slot.icon:SetTexture(slice.icon or QUESTION_MARK)
+		slot.icon2:SetTexture(slice.icon2)
+		slot.icon2:SetShown(slice.icon2 ~= nil)
 		slot.more:SetShown(slice.type == "ring")
 		applyStyle(self, slot)
 		slot:Show()
@@ -117,8 +177,22 @@ function Display:Render(key)
 	for i = n + 1, #self.slots do
 		self.slots[i]:Hide()
 	end
-	self.hint:SetText((self.header:GetAttribute("depth") or 0) > 0 and "A select  ·  B back" or "A select  ·  B close")
+	self:UpdateHint()
 	self:UpdateCounts()
+	self:Animate(0)
+end
+
+function Display:UpdateHint()
+	local header = self.header
+	local depth = header:GetAttribute("depth") or 0
+	local parts = { "A select", depth > 0 and "B back" or "B close" }
+	if depth == 0 and ForeverRingsDB.tapRepeat and not header:GetAttribute("sticky") then
+		local name = ActionName(header:GetAttribute("last:" .. self.key .. ":t"), header:GetAttribute("last:" .. self.key .. ":v"))
+		if name then
+			table.insert(parts, 1, "Tap: " .. name)
+		end
+	end
+	self.hint:SetText(table.concat(parts, "  ·  "))
 end
 
 -- Display only, safe in combat.
@@ -129,6 +203,11 @@ function Display:UpdateCounts()
 		slot.count:SetText(count > 1 and count or "")
 		slot.icon:SetDesaturated(slice.itemID ~= nil and count == 0)
 	end
+end
+
+local function StickHeld(header)
+	return header:GetAttribute("held-up") or header:GetAttribute("held-right")
+		or header:GetAttribute("held-down") or header:GetAttribute("held-left")
 end
 
 -- Mirrors the PICK snippet so the highlight matches what will be used.
@@ -158,16 +237,50 @@ function Display:SelectedSlice()
 	return math.floor((angle + step / 2) / step) % n + 1
 end
 
-function Display:UpdateHighlight()
+function Display:Animate(elapsed)
+	self.time = self.time + elapsed
+	self.openAge = self.openAge + elapsed
+	self.frame:SetAlpha(EaseOut(self.openAge / OPEN_TIME))
+
 	local selected = self:SelectedSlice()
+	if selected ~= self.selected then
+		if selected and StickHeld(self.header) then
+			Vibrate()
+		end
+		self.selected = selected
+	end
+
 	local clean = ForeverRingsDB.style ~= "classic"
+	local pulse = 0.8 + 0.2 * math.sin(self.time * 5)
 	for i = 1, #self.slices do
 		local slot = self.slots[i]
 		local on = i == selected
-		slot.disc:SetAlpha(clean and on and 1 or 0)
-		slot.glow:SetAlpha(not clean and on and 1 or 0)
-		slot:SetScale(on and 1.15 or 1)
+		-- Slots pop out from the centre one after another.
+		local p = EaseOut((self.openAge - (i - 1) * STAGGER) / OPEN_TIME)
+		local rad = math.rad(slot.angle)
+		local radius = RADIUS * (0.55 + 0.45 * p)
+		slot:ClearAllPoints()
+		slot:SetPoint("CENTER", self.frame, "CENTER", math.sin(rad) * radius, math.cos(rad) * radius)
+		slot.scale = Approach(slot.scale, on and SELECT_SCALE or 1, elapsed, 16)
+		slot:SetScale(slot.scale * (0.6 + 0.4 * p))
+		slot:SetAlpha(p)
+		slot.disc:SetAlpha(clean and on and pulse or 0)
+		slot.glow:SetAlpha(not clean and on and pulse or 0)
 	end
+
+	if selected then
+		-- Swing along the shortest way round.
+		local target = self.slots[selected].angle
+		local diff = (target - self.pointerAngle + 180) % 360 - 180
+		self.pointerAngle = self.pointer:IsShown() and Approach(self.pointerAngle, self.pointerAngle + diff, elapsed, 20) or target
+		local rad = math.rad(self.pointerAngle)
+		self.pointer:ClearAllPoints()
+		self.pointer:SetPoint("CENTER", self.frame, "CENTER", math.sin(rad) * POINTER_RADIUS, math.cos(rad) * POINTER_RADIUS)
+		self.pointer:Show()
+	else
+		self.pointer:Hide()
+	end
+
 	if #self.slices == 0 then
 		self.title:SetText(ns.RingLabel(self.key) .. "\n|cff999999(empty)|r")
 	elseif selected then

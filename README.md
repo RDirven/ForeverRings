@@ -5,8 +5,10 @@
 ## Features
 
 - **Made for controllers.** Aim with the right stick (or left stick / D-pad). Release to use, **A** to select, **B** to go back.
+- **Tap to repeat.** Tap the ring button without aiming to use your last pick again: one tap to mount, one tap to eat.
+- **Feel it.** A short rumble when the stick lands on a new slot, and smooth animations.
 - **Rings that fill themselves**
-  - **Food**: food & drink from your bags, best first.
+  - **Food**: food & drink from your bags, best first, plus one **Eat & Drink** slot that does both at once.
   - **Bag**: every usable item (potions, scrolls, quest items…).
   - **Mounts**: your favorites, or all usable mounts.
 - **Main ring with sub-rings.** One button for everything: Main → Food / Mounts / Bag / Tools / your own rings.
