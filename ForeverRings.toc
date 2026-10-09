@@ -4,6 +4,7 @@
 ## Author: Robert-Jan
 ## Version: 0.1.0
 ## SavedVariables: ForeverRingsDB
+## X-Curse-Project-ID: 1734762
 
 Snippets.lua
 Data.lua
