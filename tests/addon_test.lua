@@ -211,8 +211,8 @@ Test("hold LB, stick up into Food, A picks the best food", function()
 	g.Press("PADRSTICKUP", true)
 	g.Update()
 	Eq(display.title:GetText(), "Food", "highlighted food")
-	assert(display.slots[1].disc:GetAlpha() > 0.5, "clean highlight")
-	Eq(display.slots[2].disc:GetAlpha(), 0, "others not highlighted")
+	assert(display.slots[1].halo:GetAlpha() > 0.5, "clean highlight")
+	Eq(display.slots[2].halo:GetAlpha(), 0, "others not highlighted")
 
 	g.Press("PADLSHOULDER", false)
 	Eq(h:IsShown(), true, "food stays open")
@@ -414,7 +414,8 @@ Test("classic style draws borders and square icons", function()
 	Eq(slot.border:IsShown(), true, "border")
 	Eq(next(slot.icon.masks), nil, "no round mask")
 	assert(slot.glow:GetAlpha() > 0.5, "glow on selection")
-	Eq(g.ns.display.backdrop:IsShown(), false, "no backdrop")
+	Eq(g.ns.display.track.vertex[2], 0.82, "gold track")
+	Eq(slot.rim:IsShown(), false, "no clean rim")
 end)
 
 -- Cooldowns and usability -----------------------------------------------------
@@ -593,8 +594,38 @@ Test("ring pops open and settles", function()
 	for _ = 1, 30 do
 		g.Update()
 	end
-	assert(math.abs(g.ns.display.slots[1].scale - 1.2) < 0.01, "selected slot grew")
+	assert(math.abs(g.ns.display.slots[1].scale - 1.22) < 0.01, "selected slot grew")
+	assert(g.ns.display.slots[2].alpha < 0.7, "others step back")
+	Eq(g.ns.display.track.rotation, 0, "track turned into place")
 	Eq(g.ns.display.pointer:IsShown(), true, "pointer visible")
+end)
+
+Test("selection ripples and using something flashes its icon", function()
+	local g = Login()
+	g.Slash("bind mount M")
+	g.Press("M", true)
+	for _ = 1, 20 do g.Update() end
+	g.Press("PADRSTICKUP", true)
+	g.Update()
+	local slot = g.ns.display.slots[1]
+	assert(slot.ping:GetAlpha() > 0.5, "ping starts")
+	for _ = 1, 30 do g.Update() end
+	Eq(slot.ping:GetAlpha(), 0, "ping fades")
+	g.Press("M", false)
+	local flash = g.ns.display.flash
+	Eq(flash:IsShown(), true, "flash after use")
+	Eq(flash.icon:GetTexture(), 5001, "with the mount icon")
+	for _ = 1, 30 do g.Update() end
+	Eq(flash:IsShown(), false, "flash gone")
+end)
+
+Test("cancelling doesn't flash", function()
+	local g = Login()
+	g.Slash("bind mount M")
+	g.Press("M", true)
+	g.Update()
+	g.Press("M", false)
+	Eq(g.ns.display.flash:IsShown(), false, "no flash")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

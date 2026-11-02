@@ -10,6 +10,7 @@
 - **Cooldowns and usability**: slots show cooldown swipes; things you can't use are dimmed, and blue when you lack mana/energy.
 - **Macros**: put your own WoW macros in any ring (picker category "Macros"). Edits to a macro are picked up automatically.
 - **Ring size**: 80% to 150% in Settings.
+- **New look**: soft backdrop, a glowing inner track with a light that follows your aim, halos and rims on the slots, a ripple on every new selection, and a flash of the icon when you use something. Rings open with a staggered pop.
 - If you never changed your Main ring, it gets the Settings slot automatically.
 
 ## 0.4.0

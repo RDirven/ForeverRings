@@ -78,6 +78,7 @@ function M.New(world)
 	function Region:GetAlpha() return self.alpha end
 	function Region:SetDesaturated(on) self.desaturated = on end
 	function Region:SetVertexColor(r, g, b) self.vertex = { r, g, b } end
+	function Region:SetRotation(radians) self.rotation = radians end
 	function Region:AddMaskTexture(mask) self.masks[mask] = true end
 	function Region:RemoveMaskTexture(mask) self.masks[mask] = nil end
 	function Region:SetText(text) self.text = text ~= nil and tostring(text) or nil end
@@ -276,9 +277,20 @@ function M.New(world)
 		end
 	end
 
+	-- Like the client: OnUpdate only runs for frames that are actually visible.
+	local function Visible(f)
+		while f do
+			if not f.shown then
+				return false
+			end
+			f = f.parent
+		end
+		return true
+	end
+
 	function game.Update()
 		for _, f in ipairs(game.frames) do
-			if f.scripts.OnUpdate then
+			if f.scripts.OnUpdate and Visible(f) then
 				f.scripts.OnUpdate(f, 0.016)
 			end
 		end
