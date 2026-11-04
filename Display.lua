@@ -213,6 +213,41 @@ local function CreateFlash()
 	return flash
 end
 
+-- While a ring is open the aiming stick shouldn't also turn the camera.
+-- The speeds are saved so a crash or reload mid-ring still gets them back.
+-- Turning speed, plus how far the stick can look around.
+local CAMERA_CVARS = { "GamePadCameraYawSpeed", "GamePadCameraPitchSpeed", "GamePadCameraLookMaxYaw", "GamePadCameraLookMaxPitch" }
+local warned = false
+
+function ns.ThawCamera()
+	local saved = ForeverRingsDB.camera
+	if saved then
+		for cvar, value in pairs(saved) do
+			SetCVar(cvar, value)
+		end
+		ForeverRingsDB.camera = nil
+	end
+end
+
+function ns.FreezeCamera()
+	if ForeverRingsDB.input ~= "rstick" or ForeverRingsDB.camera or not GetCVar then
+		return
+	end
+	local saved = {}
+	for _, cvar in ipairs(CAMERA_CVARS) do
+		local value = GetCVar(cvar)
+		if value then
+			saved[cvar] = value
+			SetCVar(cvar, "0")
+			if tonumber(GetCVar(cvar)) ~= 0 and not warned then
+				warned = true
+				ns.Print("Couldn't hold the camera still (" .. cvar .. " stays " .. tostring(GetCVar(cvar)) .. ").")
+			end
+		end
+	end
+	ForeverRingsDB.camera = next(saved) and saved or nil
+end
+
 local Display = {}
 Display.__index = Display
 
@@ -250,6 +285,8 @@ function ns.CreateDisplay(header)
 	self.flash = CreateFlash()
 
 	frame:SetScript("OnUpdate", function(_, elapsed) self:Animate(elapsed or 0) end)
+	frame:SetScript("OnShow", ns.FreezeCamera)
+	frame:SetScript("OnHide", ns.ThawCamera)
 	header:HookScript("OnAttributeChanged", function(_, name, value)
 		if name == "active" and value then
 			self:Render(value)
@@ -328,7 +365,7 @@ end
 function Display:UpdateHint()
 	local header = self.header
 	local depth = header:GetAttribute("depth") or 0
-	local parts = { "A select", depth > 0 and "B back" or "B close" }
+	local parts = { "A / click select", depth > 0 and "B / right-click back" or "B / right-click close" }
 	if depth == 0 and ForeverRingsDB.tapRepeat and not header:GetAttribute("sticky") then
 		local name = ActionName(header:GetAttribute("last:" .. self.key .. ":t"), header:GetAttribute("last:" .. self.key .. ":v"))
 		if name then
@@ -376,6 +413,9 @@ function Display:SelectedSlice()
 	if header:GetAttribute("held-left") then dx = dx - 1 end
 	if header:GetAttribute("held-up") then dy = dy + 1 end
 	if header:GetAttribute("held-down") then dy = dy - 1 end
+	if dx == 0 and dy == 0 then
+		dx, dy = header:GetAttribute("aim-dx") or 0, header:GetAttribute("aim-dy") or 0
+	end
 	if dx == 0 and dy == 0 then
 		local mx0, my0 = header:GetAttribute("mx0"), header:GetAttribute("my0")
 		if mx0 then

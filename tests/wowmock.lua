@@ -42,6 +42,8 @@ function M.New(world)
 		printed = {},
 		timers = {},
 		cursor = { 960, 540 },
+		modifiers = {},
+		cvars = {},
 		frames = {},
 	}
 
@@ -118,6 +120,8 @@ function M.New(world)
 	end
 	function Frame:SetFrameStrata(strata) self.strata = strata end
 	function Frame:EnableMouse(on) self.mouse = on end
+	function Frame:EnableMouseWheel(on) self.wheel = on end
+	function Frame:RegisterForDrag(...) self.drag = { ... } end
 	function Frame:RegisterForClicks(...)
 		self.clicks = {}
 		for _, c in ipairs({ ... }) do
@@ -208,7 +212,7 @@ function M.New(world)
 		if wrap then
 			setfenv(wrap.fn, { owner = wrap.header, math = math })
 			game.inSecure = true
-			local ok, err = pcall(function() result = wrap.fn(frame, "LeftButton", down) end)
+			local ok, err = pcall(function() result = wrap.fn(frame, button or "LeftButton", down) end)
 			game.inSecure = false
 			assert(ok, err)
 		end
@@ -365,7 +369,6 @@ function M.New(world)
 		SaveBindings = function() end,
 		GetCurrentBindingSet = function() return 1 end,
 		CopyTable = DeepCopy,
-		MAX_ACCOUNT_MACROS = 120,
 		GetNumMacros = function()
 			local global, perChar = 0, 0
 			for _, m in ipairs(game.macros) do
@@ -383,6 +386,27 @@ function M.New(world)
 				return m.name, m.icon, m.body
 			end
 		end,
+		CreateMacro = function(name, icon, body, perChar)
+			table.insert(game.macros, { name = name, icon = icon, body = body, perChar = perChar or nil })
+			return env.GetMacroIndexByName(name)
+		end,
+		EditMacro = function(index, name, icon, body)
+			local old = env.GetMacroInfo(index)
+			for _, m in ipairs(game.macros) do
+				if m.name == old then
+					m.name, m.icon, m.body = name, icon, body
+				end
+			end
+			return index
+		end,
+		PickupMacro = function(index) game.cursorInfo = { "macro", index } end,
+		IsShiftKeyDown = function() return game.modifiers.shift end,
+		IsControlKeyDown = function() return game.modifiers.ctrl end,
+		IsAltKeyDown = function() return game.modifiers.alt end,
+		GetCVar = function(name) return game.cvars[name] end,
+		SetCVar = function(name, value) game.cvars[name] = tostring(value) end,
+		GetCursorInfo = function() return unpack(game.cursorInfo or {}) end,
+		ClearCursor = function() game.cursorInfo = nil end,
 		GetMacroIndexByName = function(name)
 			local g, c = 0, 0
 			for _, m in ipairs(game.macros) do

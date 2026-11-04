@@ -17,6 +17,9 @@ local INPUTS = {
 }
 local DIRECTIONS = { "up", "right", "down", "left" }
 
+-- Not every client defines it. Character macros start after the general ones.
+ns.MAX_ACCOUNT_MACROS = MAX_ACCOUNT_MACROS or 120
+
 ns.STYLES = { "clean", "classic" }
 ns.INPUTS = { "rstick", "lstick", "dpad" }
 ns.INPUT_LABELS = { rstick = "Right stick", lstick = "Left stick", dpad = "D-pad" }
@@ -27,10 +30,12 @@ local DEFAULTS = {
 	confirm = "PAD1",
 	back = "PAD2",
 	tapRepeat = true,
+	releasePick = true,
 	vibration = true,
 	scale = 1,
 	welcomed = false,
 	last = {},
+	binds = {},         -- [ring] = key, applied as priority override bindings
 	rings = {
 		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" }, { settings = true } } },
 		tools = { label = "Tools", slots = {} },
@@ -57,6 +62,7 @@ end
 
 local header
 local triggers = {}
+local binder = CreateFrame("Frame")
 local refreshPending, refreshQueued = false, false
 
 function ns.Print(msg)
@@ -64,8 +70,8 @@ function ns.Print(msg)
 end
 local Print = ns.Print
 
-local function SecureButton(name, snippet, clicks)
-	local button = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
+local function SecureButton(name, snippet, clicks, parent)
+	local button = CreateFrame("Button", name, parent or UIParent, "SecureActionButtonTemplate")
 	button:SetSize(1, 1)
 	button:SetPoint("TOPLEFT")
 	button:RegisterForClicks(unpack(clicks))
@@ -84,6 +90,11 @@ local function EnsureTrigger(key)
 end
 
 local function ApplyInput()
+	-- Without this the client never sends PADRSTICKUP and friends, so the
+	-- sticks can't aim. Unbound stick directions do nothing, so it's safe on.
+	if ForeverRingsDB.input ~= "dpad" and GetCVar and GetCVar("GamePadStickAxisButtons") ~= "1" then
+		SetCVar("GamePadStickAxisButtons", "1")
+	end
 	local keys = INPUTS[ForeverRingsDB.input] or INPUTS.rstick
 	for i, dir in ipairs(DIRECTIONS) do
 		header:SetAttribute("key-" .. dir, keys[i])
@@ -91,6 +102,7 @@ local function ApplyInput()
 	header:SetAttribute("key-confirm", ForeverRingsDB.confirm)
 	header:SetAttribute("key-back", ForeverRingsDB.back)
 	header:SetAttribute("tap-repeat", ForeverRingsDB.tapRepeat or nil)
+	header:SetAttribute("release-pick", ForeverRingsDB.releasePick or nil)
 end
 
 local function CreateHeader()
@@ -102,10 +114,18 @@ local function CreateHeader()
 	header:Hide()
 
 	for _, dir in ipairs(DIRECTIONS) do
-		SecureButton("ForeverRingsDir_" .. dir, ns.snippets.direction, { "AnyDown", "AnyUp" }):SetAttribute("dir", dir)
+		local button = SecureButton("ForeverRingsDir_" .. dir, ns.snippets.direction, { "AnyDown", "AnyUp" })
+		button:SetAttribute("dir", dir)
+		-- Picks happen when the stick is let go.
+		button:SetAttribute("useOnKeyDown", false)
 	end
 	SecureButton("ForeverRingsConfirm", ns.snippets.confirm, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
 	SecureButton("ForeverRingsBack", ns.snippets.back, { "AnyDown" })
+	-- Covers the screen while a ring is open, so the mouse can pick too.
+	local mouse = SecureButton("ForeverRingsMouse", ns.snippets.mouse, { "LeftButtonDown", "RightButtonDown" }, header)
+	mouse:ClearAllPoints()
+	mouse:SetAllPoints(header)
+	mouse:SetAttribute("useOnKeyDown", true)
 
 	ApplyInput()
 	for name, value in pairs(ForeverRingsDB.last) do
@@ -118,6 +138,20 @@ local function CreateHeader()
 		end
 	end)
 	ns.display = ns.CreateDisplay(header)
+end
+
+-- Ring buttons are priority override bindings, so they win over Blizzard's
+-- own gamepad bindings and action bar overrides on the same button.
+local function ApplyRingBindings()
+	if InCombatLockdown() then
+		return
+	end
+	ClearOverrideBindings(binder)
+	for key, binding in pairs(ForeverRingsDB.binds) do
+		if triggers[key] then
+			SetOverrideBindingClick(binder, true, binding, "ForeverRingsTrigger_" .. key, "LeftButton")
+		end
+	end
 end
 
 -- Pushes every ring into the header's secure attributes. Out of combat only.
@@ -147,6 +181,7 @@ local function RefreshAll()
 			lastCounts[key] = nil
 		end
 	end
+	ApplyRingBindings()
 	if ns.OnRingsChanged then
 		ns.OnRingsChanged()
 	end
@@ -172,7 +207,15 @@ events:SetScript("OnEvent", function(_, event)
 			end
 		end
 		MigrateMain()
+		ns.ThawCamera()
 		CreateHeader()
+		-- Buttons set before ring buttons became override bindings.
+		for key in pairs(ns.autoRings) do
+			ForeverRingsDB.binds[key] = ForeverRingsDB.binds[key] or GetBindingKey(ns.TriggerCommand(key))
+		end
+		for key in pairs(ForeverRingsDB.rings) do
+			ForeverRingsDB.binds[key] = ForeverRingsDB.binds[key] or GetBindingKey(ns.TriggerCommand(key))
+		end
 		events:RegisterEvent("BAG_UPDATE_DELAYED")
 		events:RegisterEvent("PLAYER_REGEN_ENABLED")
 		events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
@@ -351,7 +394,7 @@ function ns.TriggerCommand(key)
 end
 
 function ns.GetRingBinding(key)
-	return GetBindingKey(ns.TriggerCommand(key))
+	return ForeverRingsDB.binds[key] or GetBindingKey(ns.TriggerCommand(key))
 end
 
 -- One button per ring: clears the ring's old buttons first. nil just unbinds.
@@ -364,10 +407,49 @@ function ns.BindRing(key, binding)
 		SetBinding(oldKey)
 	end
 	if binding then
+		-- One ring per button.
+		for other, b in pairs(ForeverRingsDB.binds) do
+			if b == binding then
+				ForeverRingsDB.binds[other] = nil
+			end
+		end
 		SetBindingClick(binding, "ForeverRingsTrigger_" .. key, "LeftButton")
 	end
+	ForeverRingsDB.binds[key] = binding
 	SaveBindings(GetCurrentBindingSet())
+	EnsureTrigger(key)
+	ApplyRingBindings()
 	return true
+end
+
+-- A general macro that clicks the ring button, put on the cursor so it can be
+-- dropped on an action bar. One click opens the ring, the next one picks.
+local QUESTION_MARK = 134400
+
+function ns.PickupRingMacro(key)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	EnsureTrigger(key)
+	local name = ("FR " .. ns.RingLabel(key)):sub(1, 16)
+	local body = "/click ForeverRingsTrigger_" .. key .. " LeftButton 1"
+	local first = ns.resolved and ns.resolved[key] and ns.resolved[key][1]
+	local icon = first and type(first.icon) == "number" and first.icon or QUESTION_MARK
+	local index = GetMacroIndexByName(name)
+	if index and index > 0 then
+		EditMacro(index, name, icon, body)
+	else
+		local ok, created = pcall(CreateMacro, name, icon, body)
+		if not ok then
+			return nil, "Your general macros are full. Delete one to make room."
+		end
+		index = created
+	end
+	if not index then
+		return nil, "Couldn't create the macro."
+	end
+	PickupMacro(index)
+	return name
 end
 
 function ns.SetStyle(name)
@@ -379,6 +461,15 @@ function ns.SetTapRepeat(on)
 		return nil, COMBAT
 	end
 	ForeverRingsDB.tapRepeat = on
+	ApplyInput()
+	return true
+end
+
+function ns.SetReleasePick(on)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.releasePick = on
 	ApplyInput()
 	return true
 end
@@ -599,6 +690,17 @@ function commands.bind(args)
 	end
 end
 
+function commands.bar(name)
+	local key = name:lower()
+	if not triggers[key] then
+		return Print("Usage: /frings bar <ring>   puts a button for the ring on your cursor")
+	end
+	local macro = Check(ns.PickupRingMacro(key))
+	if macro then
+		Print("Drop '" .. macro .. "' on your action bar. Click to open the ring, aim, click again (or left-click) to use.")
+	end
+end
+
 function commands.style(name)
 	if name ~= "clean" and name ~= "classic" then
 		return Print("Usage: /frings style clean|classic")
@@ -646,11 +748,12 @@ function commands.help()
 	Print("Bind rings under Options > Keybindings > AddOns > Forever Rings, or with /frings.")
 	Print("Hold the ring button, aim with the stick, release (or press A). B goes back.")
 	Print("/frings new|delete <ring>  ·  add <ring> <link|ring:name>  ·  remove <ring> <n>")
+	Print("/frings bar <ring>   put a ring on your action bar")
 	Print("/frings list [ring]  ·  bind <ring> <key>  ·  style clean|classic  ·  input rstick|lstick|dpad")
 	Print("/frings export <ring>  ·  import <code>   share rings with friends")
 end
 
-local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, input = true, refresh = true, config = true, import = true }
+local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, bar = true, input = true, refresh = true, config = true, import = true }
 
 SLASH_FOREVERRINGS1 = "/frings"
 SLASH_FOREVERRINGS2 = "/foreverrings"

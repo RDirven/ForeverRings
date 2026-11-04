@@ -2,6 +2,19 @@
 
 ## 0.5.0
 
+- **Rings on your action bar**: *Put on action bar* in the settings screen (or `/frings bar <ring>`) puts a macro on your cursor. Click it to open the ring, aim, then click again or left-click to use.
+- **Mouse**: left-click picks from an open ring, right-click goes back or closes. Pressing the ring button again while the ring is open picks too.
+- **Settings screen works with the mouse**: clickable Rings/Settings tabs and slots, mouse wheel, buttons for Edit, Set key, Rename and Back, right-click to clear a slot or step a setting back.
+- **Drag and drop**: drop spells, items, mounts and macros on a slot or on a ring in the list.
+- Middle and side mouse buttons can be set as ring buttons.
+- **Button combos** like Shift + B: hold a modifier (or a pad button the client treats as Shift/Ctrl/Alt) while setting a ring's button.
+- Ring buttons now win over Blizzard's own gamepad bindings on the same button.
+- Drag a ring out of the list to get its action bar button.
+- Fixed: *Put on action bar* and the Macros picker failed on clients without `MAX_ACCOUNT_MACROS`.
+- **The camera holds still** while a ring is open, so aiming with the right stick no longer looks around.
+- **Pick on stick release** (new setting, on by default): aim, let go of the stick, and that slot is used, like Blizzard's own radial menus. Turn it off to have letting go keep the selection instead; then release the ring button or press A to use it.
+- Fixed: the sticks couldn't aim when the client setting `GamePadStickAxisButtons` was off. It's now turned on for you.
+- Fixed: mouse aiming read the cursor before the ring was shown.
 - **Fully playable without a keyboard**
   - First login opens the settings screen with a short welcome, Main already selected.
   - New **Settings** slot in the Main ring opens the settings screen. (Not remembered for tap to repeat.)

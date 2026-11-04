@@ -213,6 +213,44 @@ Test("binding a shoulder button works but warns about Blizzard's gamepad UI", fu
 	Has(ui.hint:GetText(), "you aim with this stick", "warning for R3 while aiming with the right stick")
 end)
 
+Test("combos: hold a pad button set as Shift, then press B", function()
+	local g, ui, st = Open()
+	g.cvars.GamePadEmulateShift = "PADLSHOULDER"
+	Pad(g, "Y")
+	g.GamePadButton("PADLSHOULDER")
+	Eq(st.capture, "main", "the modifier alone doesn't count")
+	g.modifiers.shift = true
+	g.GamePadButton("PAD2")
+	Eq(st.capture, nil, "done, not cancelled")
+	Eq(g.ns.GetRingBinding("main"), "SHIFT-PAD2", "bound the combo")
+	Pad(g, "B")
+	g.Press("SHIFT-PAD2", true)
+	Eq(g.env.ForeverRingsHeader:IsShown(), true, "the combo opens Main")
+end)
+
+Test("ring buttons are priority overrides, so they beat Blizzard's gamepad bindings", function()
+	local g = WoW.New(World()).Login()
+	g.Slash("bind food PADLSTICK")
+	local found
+	for _, f in ipairs(g.frames) do
+		local o = f.overrides.PADLSTICK
+		if o and o.name == "ForeverRingsTrigger_food" then
+			found = true
+		end
+	end
+	Eq(found, true, "override set")
+	Eq(g.env.ForeverRingsDB.binds.food, "PADLSTICK", "saved")
+	g.Slash("bind mount PADLSTICK")
+	Eq(g.env.ForeverRingsDB.binds.food, nil, "one ring per button")
+end)
+
+Test("drag a ring from the list to get its action bar button", function()
+	local g, ui, st = Open()
+	ui.rows[2].scripts.OnDragStart(ui.rows[2])
+	Eq(g.cursorInfo[1], "macro", "macro on the cursor")
+	Eq(ui.frame:IsShown(), false, "screen closed to drop it")
+end)
+
 Test("B cancels button capture", function()
 	local g, ui, st = Open()
 	Pad(g, "Y")
@@ -270,7 +308,7 @@ Test("settings tab: style, aim and settings button", function()
 	Eq(g.env.ForeverRingsHeader:GetAttribute("key-up"), "PADLSTICKUP", "applied to rings")
 	Pad(g, "left")
 	Eq(g.env.ForeverRingsDB.input, "rstick", "back to right stick")
-	Pad(g, "down", "down", "down", "down", "A") -- past Ring size, Tap to repeat and Vibration
+	Pad(g, "down", "down", "down", "down", "down", "A") -- past Ring size, Pick on stick release, Tap to repeat and Vibration
 	Eq(st.capture, "config", "capturing settings button")
 	g.GamePadButton("PADSOCIAL")
 	Pad(g, "B")
@@ -284,7 +322,12 @@ end)
 Test("settings: tap to repeat and vibration toggles", function()
 	local g, ui, st = Open()
 	Pad(g, "RB", "down", "down", "down")
-	Has(RowText(ui, 4), "Tap to repeat", "row")
+	Has(RowText(ui, 4), "Pick on stick release", "row")
+	Pad(g, "A")
+	Eq(g.env.ForeverRingsDB.releasePick, false, "release-pick off")
+	Eq(g.env.ForeverRingsHeader:GetAttribute("release-pick"), nil, "secure flag off")
+	Pad(g, "down")
+	Has(RowText(ui, 5), "Tap to repeat", "row")
 	Pad(g, "A")
 	Eq(g.env.ForeverRingsDB.tapRepeat, false, "off")
 	Eq(g.env.ForeverRingsHeader:GetAttribute("tap-repeat"), nil, "secure flag off")
@@ -310,6 +353,54 @@ Test("mouse: hover selects, click opens", function()
 	Eq(g.ns.configUI.ringKeys[st.ringIndex], "bag", "hovered bag")
 	ui.rows[4].scripts.OnClick(ui.rows[4])
 	Eq(st.mode, "edit", "clicked into bag")
+end)
+
+Test("mouse: click the Settings tab, wheel scrolls", function()
+	local g, ui, st = Open()
+	ui.tabButtons.settings.scripts.OnClick(ui.tabButtons.settings)
+	Eq(st.tab, "settings", "Settings tab")
+	ui.list.scripts.OnMouseWheel(ui.list, -1)
+	Eq(st.settingIndex, 2, "wheel down")
+	ui.rows[1].scripts.OnClick(ui.rows[1], "LeftButton")
+	Eq(g.env.ForeverRingsDB.style, "classic", "click changes the style")
+	ui.tabButtons.rings.scripts.OnClick(ui.tabButtons.rings)
+	Eq(st.tab, "rings", "Rings tab")
+end)
+
+Test("mouse: drag a spell onto a slot, right-click clears it", function()
+	local g, ui, st = Open()
+	Pad(g, "up", "A")
+	Eq(st.mode, "edit", "editing the new ring")
+	g.cursorInfo = { "spell", 1, "spell", 3565 }
+	ui.slots[1].scripts.OnReceiveDrag(ui.slots[1])
+	Eq(g.env.ForeverRingsDB.rings.ring1.slots[1].kind, "spell", "dropped")
+	Eq(g.env.ForeverRingsDB.rings.ring1.slots[1].id, 3565, "the portal")
+	Eq(g.cursorInfo, nil, "cursor cleared")
+	g.cursorInfo = { "item", 101 }
+	ui.slots[2].scripts.OnClick(ui.slots[2], "LeftButton")
+	Eq(g.env.ForeverRingsDB.rings.ring1.slots[2].id, 101, "click drops too")
+	ui.slots[1].scripts.OnClick(ui.slots[1], "RightButton")
+	Eq(#g.env.ForeverRingsDB.rings.ring1.slots, 1, "cleared")
+	Eq(g.env.ForeverRingsDB.rings.ring1.slots[1].id, 101, "item left")
+end)
+
+Test("mouse: dropping on an auto ring is refused", function()
+	local g, ui, st = Open()
+	g.cursorInfo = { "item", 101 }
+	ui.rows[2].scripts.OnReceiveDrag(ui.rows[2])
+	Has(st.message, "fills itself", "refused")
+	Eq(g.cursorInfo, nil, "cursor cleared")
+end)
+
+Test("put a ring on the action bar: a macro on the cursor that clicks it", function()
+	local g, ui, st = Open()
+	g.Slash("bar food")
+	local name, _, body = g.env.GetMacroInfo(g.env.GetMacroIndexByName("FR Food"))
+	Eq(name, "FR Food", "macro made")
+	Eq(body, "/click ForeverRingsTrigger_food LeftButton 1", "clicks the ring")
+	Eq(g.cursorInfo[1], "macro", "on the cursor")
+	g.Slash("bar food")
+	Eq(g.env.GetNumMacros(), 2, "reused, not duplicated")
 end)
 
 Test("keyboard: arrows, Enter and Esc", function()

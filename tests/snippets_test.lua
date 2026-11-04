@@ -20,14 +20,14 @@ local function Handle(attrs)
 end
 
 local header, compiled = nil, {}
-local function Run(name, self, down)
+local function Run(name, self, down, button)
 	if not compiled[name] then
 		local fn, err = loadstring("local self, button, down = ...\n" .. ns.snippets[name], name)
 		assert(fn, err)
 		compiled[name] = fn
 	end
 	setfenv(compiled[name], { owner = header, math = math })
-	return compiled[name](self, "LeftButton", down)
+	return compiled[name](self, button or "LeftButton", down)
 end
 
 local function Ring(key, slices)
@@ -177,6 +177,76 @@ Test("A on a sub-ring while holding the trigger, then release picks from it", fu
 	Eq(t.attrs.item, "item:7", "left = slice 7")
 end)
 
+Test("action bar click: opens, stays open, a second click picks", function()
+	local t = Handle({ ring = "main" })
+	Eq(Run("trigger", t, true), false, "first click only opens")
+	Eq(header.shown, true, "open")
+	Dir("right", true)
+	Eq(Run("trigger", t, true), nil, "second click proceeds")
+	Eq(t.attrs.spell, 111, "right = spell")
+	Eq(t.attrs.useOnKeyDown, true, "acts on the down click")
+	Eq(header.shown, false, "closed")
+	Eq(Run("trigger", t, false), false, "key release afterwards does nothing")
+end)
+
+Test("second click with nothing aimed closes", function()
+	local t = Handle({ ring = "main" })
+	Run("trigger", t, true)
+	Eq(Run("trigger", t, true), false, "nothing fired")
+	Eq(header.shown, false, "closed")
+end)
+
+Test("mouse: left click picks where the mouse moved, right click closes", function()
+	local t, m = Handle({ ring = "main" }), Handle({})
+	Run("trigger", t, true)
+	Eq(Run("mouse", m, true), false, "no aim, nothing")
+	Eq(header.shown, true, "still open")
+	header.mouse = { 0.5, 0.9 }
+	Eq(Run("mouse", m, true), false, "up = food sub-ring")
+	Eq(header.attrs.active, "food", "entered food")
+	Eq(Run("mouse", m, true, "RightButton"), false, "right click")
+	Eq(header.attrs.active, "main", "back to main")
+	header.mouse = { 0.1, 0.5 }
+	Run("trigger", t, true)
+	Eq(Run("mouse", m, true, "RightButton"), false, "right click again")
+	Eq(header.shown, false, "closed")
+end)
+
+Test("mouse click picks while the ring button is still held", function()
+	local t, m = Handle({ ring = "main" }), Handle({})
+	Run("trigger", t, true)
+	header.mouse = { 0.9, 0.5 }
+	Eq(Run("mouse", m, true), nil, "click proceeds")
+	Eq(m.attrs.spell, 111, "right = spell")
+	Eq(Run("trigger", t, false), false, "release does nothing")
+end)
+
+Test("release-pick: letting go of the stick picks", function()
+	header.attrs["release-pick"] = true
+	local t = Handle({ ring = "food" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Dir("right", true)
+	Eq(Run("direction", dirs.right, false), false, "half a diagonal: nothing yet")
+	Eq(Run("direction", dirs.up, false), nil, "all let go: picks")
+	Eq(dirs.up.attrs.item, "item:2", "up-right")
+	Eq(header.shown, false, "closed")
+	Eq(Run("trigger", t, false), false, "ring button release does nothing")
+end)
+
+Test("release-pick goes into a sub-ring, then picks there", function()
+	header.attrs["release-pick"] = true
+	local t = Handle({ ring = "main" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Dir("up", false)
+	Eq(header.attrs.active, "food", "entered food")
+	Eq(header.shown, true, "still open")
+	Dir("left", true)
+	Eq(Run("direction", dirs.left, false), nil, "picks")
+	Eq(dirs.left.attrs.item, "item:7", "left = slice 7")
+end)
+
 Test("B goes back one level, then closes", function()
 	local t = Handle({ ring = "main" })
 	Run("trigger", t, true)
@@ -229,15 +299,37 @@ Test("tap repeats the last action used from that ring", function()
 	Eq(header.shown, false, "closed")
 end)
 
-Test("touching the stick and returning to center cancels instead of repeating", function()
+Test("letting go of the stick keeps the selection instead of repeating", function()
 	header.attrs["tap-repeat"] = true
 	header.attrs["last:food:t"], header.attrs["last:food:v"] = "item", "item:3"
 	local t = Handle({ ring = "food" })
 	Run("trigger", t, true)
 	Dir("up", true)
 	Dir("up", false)
-	Eq(Run("trigger", t, false), false, "cancelled")
-	Eq(t.attrs.type, nil, "nothing fired")
+	Eq(Run("trigger", t, false), nil, "fires")
+	Eq(t.attrs.item, "item:1", "up, not the repeat")
+end)
+
+Test("letting go of a diagonal one half at a time keeps the diagonal", function()
+	local t = Handle({ ring = "food" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Dir("right", true)
+	Dir("right", false)
+	Dir("up", false)
+	Run("trigger", t, false)
+	Eq(t.attrs.item, "item:2", "up-right")
+end)
+
+Test("the kept selection resets for a sub-ring", function()
+	local t = Handle({ ring = "main" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Dir("up", false)
+	Run("trigger", t, false)
+	Eq(header.attrs.active, "food", "entered food")
+	Eq(header.attrs["aim-dx"], nil, "aim cleared")
+	Eq(Run("confirm", Handle({}), true), false, "nothing selected yet")
 end)
 
 Test("tap does nothing when the option is off", function()

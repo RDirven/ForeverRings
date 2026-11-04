@@ -9,8 +9,11 @@ local _, ns = ...
 --   r:<ring>:v<i>       action value, or the sub-ring key for "ring"
 --   key-up/right/down/left, key-confirm, key-back   gamepad keys
 --   tap-repeat          tapping a ring button repeats its last action
+--   release-pick        letting go of the stick picks what it pointed at
 -- Runtime state:
 --   active, sticky, depth, stack<d>, held-<dir>, moved, mx0/my0
+--   aim-dx/aim-dy       last stick direction, kept after the stick is let go
+--   held                the ring button is down (not set by an action bar click)
 --   last:<ring>:t / last:<ring>:v   last action used from each ring
 
 ns.DEAD_ZONE = 40
@@ -18,9 +21,6 @@ ns.DEAD_ZONE = 40
 -- Expects local `openKey`. Shows the ring and grabs the direction/confirm/back keys.
 local OPEN = [[
 	owner:SetAttribute("active", openKey)
-	local mx, my = owner:GetMousePosition()
-	owner:SetAttribute("mx0", mx and mx * owner:GetWidth())
-	owner:SetAttribute("my0", my and my * owner:GetHeight())
 	if not owner:IsShown() then
 		owner:Show()
 		owner:SetBindingClick(true, owner:GetAttribute("key-up"), "ForeverRingsDir_up")
@@ -30,6 +30,12 @@ local OPEN = [[
 		owner:SetBindingClick(true, owner:GetAttribute("key-confirm"), "ForeverRingsConfirm")
 		owner:SetBindingClick(true, owner:GetAttribute("key-back"), "ForeverRingsBack")
 	end
+	owner:SetAttribute("aim-dx", nil)
+	owner:SetAttribute("aim-dy", nil)
+	-- Read the mouse once shown: a hidden frame has no mouse position.
+	local mx, my = owner:GetMousePosition()
+	owner:SetAttribute("mx0", mx and mx * owner:GetWidth())
+	owner:SetAttribute("my0", my and my * owner:GetHeight())
 ]]
 
 local CLOSE = [[
@@ -43,6 +49,9 @@ local CLOSE = [[
 	owner:SetAttribute("held-down", nil)
 	owner:SetAttribute("held-left", nil)
 	owner:SetAttribute("moved", nil)
+	owner:SetAttribute("held", nil)
+	owner:SetAttribute("aim-dx", nil)
+	owner:SetAttribute("aim-dy", nil)
 ]]
 
 -- Expects `kind` and `value`. Loads the action into self; the secure click
@@ -53,8 +62,9 @@ local FIRE = [[
 	self:SetAttribute(kind == "macro" and "macrotext" or kind, value)
 ]]
 
--- Sets locals `key` and `pick`. The stick direction wins; otherwise the mouse
--- movement since the ring opened is used, so keyboard players can aim too.
+-- Sets locals `key` and `pick`. The stick direction wins, then the last one it
+-- pointed at (so letting go keeps the selection); otherwise the mouse movement
+-- since the ring opened is used, so keyboard players can aim too.
 local PICK = ([[
 	local pick
 	local key = owner:GetAttribute("active")
@@ -64,6 +74,9 @@ local PICK = ([[
 	if owner:GetAttribute("held-left") then dx = dx - 1 end
 	if owner:GetAttribute("held-up") then dy = dy + 1 end
 	if owner:GetAttribute("held-down") then dy = dy - 1 end
+	if dx == 0 and dy == 0 then
+		dx, dy = owner:GetAttribute("aim-dx") or 0, owner:GetAttribute("aim-dy") or 0
+	end
 	if dx == 0 and dy == 0 then
 		local mx, my = owner:GetMousePosition()
 		local mx0, my0 = owner:GetAttribute("mx0"), owner:GetAttribute("my0")
@@ -113,22 +126,44 @@ local ACT = [[
 	end
 ]] .. FIRE
 
+-- B: one sub-ring back, or close.
+local BACK = [[
+	local depth = owner:GetAttribute("depth") or 0
+	if depth > 0 then
+		local openKey = owner:GetAttribute("stack" .. depth)
+		owner:SetAttribute("depth", depth - 1)
+]] .. OPEN .. [[
+	else
+]] .. CLOSE .. [[
+	end
+	return false
+]]
+
 ns.snippets = {
 	-- Ring button: press opens the ring, release picks. A quick tap without
 	-- touching the stick repeats the last action from this ring.
+	-- A press while the ring is already open picks right away, so a one-click
+	-- action bar button works too: click to open, aim, click again.
 	trigger = [[
+	local closeIfNothing = true
 	if down then
 		if not owner:IsShown() then
 			owner:SetAttribute("depth", 0)
 			local openKey = self:GetAttribute("ring")
 ]] .. OPEN .. [[
+			owner:SetAttribute("held", true)
+			return false
 		end
+		owner:SetAttribute("held", nil)
+		self:SetAttribute("useOnKeyDown", true)
+]] .. PICK .. ACT .. [[
+		return
+	end
+	if not owner:IsShown() or not owner:GetAttribute("held") then
 		return false
 	end
-	if not owner:IsShown() then
-		return false
-	end
-	local closeIfNothing = true
+	owner:SetAttribute("held", nil)
+	self:SetAttribute("useOnKeyDown", false)
 ]] .. PICK .. [[
 	if not pick and owner:GetAttribute("tap-repeat") and not owner:GetAttribute("sticky") and not owner:GetAttribute("moved") then
 		local kind = owner:GetAttribute("last:" .. key .. ":t")
@@ -153,23 +188,44 @@ ns.snippets = {
 	if not down then
 		return false
 	end
-	local depth = owner:GetAttribute("depth") or 0
-	if depth > 0 then
-		local openKey = owner:GetAttribute("stack" .. depth)
-		owner:SetAttribute("depth", depth - 1)
-]] .. OPEN .. [[
-	else
-]] .. CLOSE .. [[
+]] .. BACK,
+
+	-- Mouse anywhere on screen while a ring is open: left click picks,
+	-- right click goes back.
+	mouse = [[
+	if not down or not owner:IsShown() then
+		return false
 	end
-	return false
-]],
+	if button == "RightButton" then
+]] .. BACK .. [[
+	end
+	local closeIfNothing = false
+]] .. PICK .. ACT,
 
 	-- Stick/D-pad directions: diagonals are two held directions at once.
+	-- With release-pick on, letting go of the last held direction picks.
 	direction = [[
 	owner:SetAttribute("held-" .. self:GetAttribute("dir"), down or nil)
+	-- Only presses change the aim: letting go (even one half of a diagonal
+	-- first) keeps what was selected.
 	if down then
 		owner:SetAttribute("moved", true)
+		local dx, dy = 0, 0
+		if owner:GetAttribute("held-right") then dx = dx + 1 end
+		if owner:GetAttribute("held-left") then dx = dx - 1 end
+		if owner:GetAttribute("held-up") then dy = dy + 1 end
+		if owner:GetAttribute("held-down") then dy = dy - 1 end
+		owner:SetAttribute("aim-dx", dx)
+		owner:SetAttribute("aim-dy", dy)
+		return false
 	end
-	return false
-]],
+	if not owner:IsShown() or not owner:GetAttribute("release-pick") then
+		return false
+	end
+	if owner:GetAttribute("held-up") or owner:GetAttribute("held-right")
+		or owner:GetAttribute("held-down") or owner:GetAttribute("held-left") then
+		return false
+	end
+	local closeIfNothing = false
+]] .. PICK .. ACT,
 }
