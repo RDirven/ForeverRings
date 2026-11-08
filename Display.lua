@@ -145,7 +145,7 @@ local function ActionName(kind, value)
 		end
 	end
 	if kind == "spell" then
-		return C_Spell.GetSpellName(value)
+		return ns.SpellLabel(value)
 	elseif kind == "toy" then
 		return C_Item.GetItemNameByID(value)
 	elseif kind == "item" then
@@ -214,35 +214,58 @@ local function CreateFlash()
 end
 
 -- While a ring is open the aiming stick shouldn't also turn the camera.
--- The speeds are saved so a crash or reload mid-ring still gets them back.
--- Turning speed, plus how far the stick can look around.
+-- Gamepad free look goes off and the stick camera speeds go as low as the
+-- client allows (WoW Forever won't go below 0.1, so the camera only crawls). What was there is saved, so a crash or reload mid-ring still
+-- gets it back.
 local CAMERA_CVARS = { "GamePadCameraYawSpeed", "GamePadCameraPitchSpeed", "GamePadCameraLookMaxYaw", "GamePadCameraLookMaxPitch" }
-local warned = false
+local FREELOOK = "freelook"
+
+-- Some clients refuse 0 for the camera speeds; take the lowest value that sticks.
+local LOW_VALUES = { "0", "0.001", "0.01", "0.05", "0.1", "0.2" }
+
+local function SetLowest(cvar)
+	for _, value in ipairs(LOW_VALUES) do
+		SetCVar(cvar, value)
+		local now = tonumber(GetCVar(cvar))
+		if now and now <= tonumber(value) + 0.0001 then
+			return
+		end
+	end
+end
 
 function ns.ThawCamera()
 	local saved = ForeverRingsDB.camera
-	if saved then
-		for cvar, value in pairs(saved) do
-			SetCVar(cvar, value)
+	if not saved then
+		return
+	end
+	ForeverRingsDB.camera = nil
+	for name, value in pairs(saved) do
+		if name == FREELOOK then
+			if SetGamePadFreeLook then
+				pcall(SetGamePadFreeLook, value)
+			end
+		else
+			SetCVar(name, value)
 		end
-		ForeverRingsDB.camera = nil
 	end
 end
 
 function ns.FreezeCamera()
-	if ForeverRingsDB.input ~= "rstick" or ForeverRingsDB.camera or not GetCVar then
+	if not ForeverRingsDB.holdCamera or ForeverRingsDB.input ~= "rstick" or ForeverRingsDB.camera then
 		return
 	end
 	local saved = {}
+	if SetGamePadFreeLook and IsGamePadFreelookEnabled then
+		local on = IsGamePadFreelookEnabled() and true or false
+		if pcall(SetGamePadFreeLook, false) then
+			saved[FREELOOK] = on
+		end
+	end
 	for _, cvar in ipairs(CAMERA_CVARS) do
-		local value = GetCVar(cvar)
+		local value = GetCVar and GetCVar(cvar)
 		if value then
 			saved[cvar] = value
-			SetCVar(cvar, "0")
-			if tonumber(GetCVar(cvar)) ~= 0 and not warned then
-				warned = true
-				ns.Print("Couldn't hold the camera still (" .. cvar .. " stays " .. tostring(GetCVar(cvar)) .. ").")
-			end
+			SetLowest(cvar)
 		end
 	end
 	ForeverRingsDB.camera = next(saved) and saved or nil

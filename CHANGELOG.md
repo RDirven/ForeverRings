@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Spell ranks**: spells show their rank everywhere (picker, ring, slot names), e.g. *Arcane Intellect (Rank 2)*. The picker lists each spell's highest rank first.
+- **Hold camera still** is now a setting (on by default), and works better: the stick camera speeds go as low as the client allows while a ring is open. WoW Forever won't take 0, so the camera now crawls instead of turning (about 13x slower).
+
 ## 0.5.0
 
 - **Rings on your action bar**: *Put on action bar* in the settings screen (or `/frings bar <ring>`) puts a macro on your cursor. Click it to open the ring, aim, then click again or left-click to use.

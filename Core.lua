@@ -31,6 +31,7 @@ local DEFAULTS = {
 	back = "PAD2",
 	tapRepeat = true,
 	releasePick = true,
+	holdCamera = true,
 	vibration = true,
 	scale = 1,
 	welcomed = false,
@@ -286,7 +287,7 @@ function ns.EntryName(entry)
 	elseif entry.macro then
 		return "Macro: " .. entry.macro
 	elseif entry.kind == "spell" then
-		return C_Spell.GetSpellName(entry.id) or ("spell " .. entry.id)
+		return ns.SpellLabel(entry.id) or ("spell " .. entry.id)
 	end
 	return C_Item.GetItemNameByID(entry.id) or ("item " .. entry.id)
 end
@@ -463,6 +464,13 @@ function ns.SetTapRepeat(on)
 	ForeverRingsDB.tapRepeat = on
 	ApplyInput()
 	return true
+end
+
+function ns.SetHoldCamera(on)
+	ForeverRingsDB.holdCamera = on
+	if not on then
+		ns.ThawCamera()
+	end
 end
 
 function ns.SetReleasePick(on)

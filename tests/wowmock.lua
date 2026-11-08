@@ -43,6 +43,7 @@ function M.New(world)
 		timers = {},
 		cursor = { 960, 540 },
 		modifiers = {},
+		freelook = true,
 		cvars = {},
 		frames = {},
 	}
@@ -404,6 +405,8 @@ function M.New(world)
 		IsControlKeyDown = function() return game.modifiers.ctrl end,
 		IsAltKeyDown = function() return game.modifiers.alt end,
 		GetCVar = function(name) return game.cvars[name] end,
+		IsGamePadFreelookEnabled = function() return game.freelook end,
+		SetGamePadFreeLook = function(on) game.freelook = on end,
 		SetCVar = function(name, value) game.cvars[name] = tostring(value) end,
 		GetCursorInfo = function() return unpack(game.cursorInfo or {}) end,
 		ClearCursor = function() game.cursorInfo = nil end,
@@ -521,6 +524,7 @@ function M.New(world)
 				return not u, u == "power"
 			end,
 			GetSpellTexture = function(id) return game.spells[id] and game.spells[id].icon end,
+			GetSpellSubtext = function(id) return game.spells[id] and game.spells[id].rank or "" end,
 			GetSpellName = function(id)
 				if game.spells[id] then
 					return game.spells[id].name

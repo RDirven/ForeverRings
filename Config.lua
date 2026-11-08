@@ -81,12 +81,25 @@ local PICKERS = {
 					for slot = info.itemIndexOffset + 1, info.itemIndexOffset + info.numSpellBookItems do
 						local item = book.GetSpellBookItemInfo(slot, Enum.SpellBookSpellBank.Player)
 						if item and item.itemType == Enum.SpellBookItemType.Spell and not item.isPassive and item.spellID then
-							list[#list + 1] = { entry = { kind = "spell", id = item.spellID }, name = item.name, icon = item.iconID }
+							list[#list + 1] = {
+								entry = { kind = "spell", id = item.spellID },
+								name = ns.SpellLabel(item.spellID) or item.name,
+								baseName = item.name or "",
+								rank = tonumber(((ns.SpellRank(item.spellID) or ""):match("(%d+)"))) or 0,
+								icon = item.iconID,
+							}
 						end
 					end
 				end
 			end
-			return SortByName(list)
+			-- Same spell together, highest rank first.
+			table.sort(list, function(a, b)
+				if a.baseName ~= b.baseName then
+					return a.baseName < b.baseName
+				end
+				return a.rank > b.rank
+			end)
+			return list
 		end,
 	},
 	{
@@ -209,6 +222,12 @@ local SETTINGS = {
 		value = function() return ForeverRingsDB.releasePick and "On" or "Off" end,
 		help = "On: aim, let go of the stick, and that slot is used.\nOff: letting go keeps the selection; release the\nring button or press A to use it.",
 		change = function() return ns.SetReleasePick(not ForeverRingsDB.releasePick) end,
+	},
+	{
+		label = "Hold camera still",
+		value = function() return ForeverRingsDB.holdCamera and "On" or "Off" end,
+		help = "While a ring is open, the right stick only aims\nand doesn't move the camera.",
+		change = function() ns.SetHoldCamera(not ForeverRingsDB.holdCamera) return true end,
 	},
 	{
 		label = "Tap to repeat",

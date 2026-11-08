@@ -25,12 +25,26 @@ local function ItemSlice(itemID)
 	return slice
 end
 
+-- "Rank 3" and the like, for spells that have ranks.
+function ns.SpellRank(spellID)
+	local sub = (C_Spell.GetSpellSubtext and C_Spell.GetSpellSubtext(spellID))
+		or (GetSpellSubtext and GetSpellSubtext(spellID))
+	return sub ~= "" and sub or nil
+end
+
+-- "Fireball (Rank 3)", or just the name.
+function ns.SpellLabel(spellID)
+	local name = C_Spell.GetSpellName(spellID)
+	local rank = name and ns.SpellRank(spellID)
+	return rank and (name .. " (" .. rank .. ")") or name
+end
+
 local function SpellSlice(spellID)
 	return {
 		type = "spell",
 		value = spellID,
 		icon = C_Spell.GetSpellTexture(spellID),
-		name = C_Spell.GetSpellName(spellID),
+		name = ns.SpellLabel(spellID),
 	}
 end
 
