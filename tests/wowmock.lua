@@ -123,6 +123,7 @@ function M.New(world)
 	function Frame:EnableMouse(on) self.mouse = on end
 	function Frame:EnableMouseWheel(on) self.wheel = on end
 	function Frame:RegisterForDrag(...) self.drag = { ... } end
+	function Frame:EnableGamePadStick(on) self.sticks = on end
 	function Frame:RegisterForClicks(...)
 		self.clicks = {}
 		for _, c in ipairs({ ... }) do

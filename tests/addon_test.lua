@@ -654,11 +654,17 @@ Test("the camera holds still while a ring is open, and gets its speed back", fun
 	g.ns.display.frame.scripts.OnShow(g.ns.display.frame)
 	Eq(g.cvars.GamePadCameraYawSpeed, "0", "frozen")
 	Eq(g.freelook, false, "free look off")
+	local eater
+	for _, f in ipairs(g.frames) do
+		if f.sticks ~= nil then eater = f end
+	end
+	Eq(eater and eater.sticks, true, "a frame takes the sticks")
 	g.Press("F", false)
 	g.ns.display.frame.scripts.OnHide(g.ns.display.frame)
 	Eq(g.cvars.GamePadCameraYawSpeed, "1.5", "yaw back")
 	Eq(g.cvars.GamePadCameraPitchSpeed, "1", "pitch back")
 	Eq(g.freelook, true, "free look back")
+	Eq(eater.sticks, false, "sticks given back")
 	g.ns.SetHoldCamera(false)
 	g.Press("F", true)
 	g.ns.display.frame.scripts.OnShow(g.ns.display.frame)

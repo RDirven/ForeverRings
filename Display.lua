@@ -214,11 +214,29 @@ local function CreateFlash()
 end
 
 -- While a ring is open the aiming stick shouldn't also turn the camera.
--- Gamepad free look goes off and the stick camera speeds go as low as the
--- client allows (WoW Forever won't go below 0.1, so the camera only crawls). What was there is saved, so a crash or reload mid-ring still
+-- A frame takes the sticks, free look goes off and the stick camera speeds go
+-- as low as the client allows (WoW Forever won't go below 0.1). What was there is saved, so a crash or reload mid-ring still
 -- gets it back.
 local CAMERA_CVARS = { "GamePadCameraYawSpeed", "GamePadCameraPitchSpeed", "GamePadCameraLookMaxYaw", "GamePadCameraLookMaxPitch" }
 local FREELOOK = "freelook"
+
+-- A frame that takes the sticks while a ring is open, so they don't reach
+-- the camera. The stick direction buttons (PADRSTICKUP...) still go to the
+-- ring's bindings.
+local stickEater
+
+local function EatSticks(on)
+	if not stickEater then
+		stickEater = CreateFrame("Frame", nil, UIParent)
+		if not stickEater.EnableGamePadStick then
+			return
+		end
+		stickEater:SetScript("OnGamePadStick", function() end)
+	end
+	if stickEater.EnableGamePadStick then
+		pcall(stickEater.EnableGamePadStick, stickEater, on)
+	end
+end
 
 -- Some clients refuse 0 for the camera speeds; take the lowest value that sticks.
 local LOW_VALUES = { "0", "0.001", "0.01", "0.05", "0.1", "0.2" }
@@ -239,6 +257,7 @@ function ns.ThawCamera()
 		return
 	end
 	ForeverRingsDB.camera = nil
+	EatSticks(false)
 	for name, value in pairs(saved) do
 		if name == FREELOOK then
 			if SetGamePadFreeLook then
@@ -255,6 +274,7 @@ function ns.FreezeCamera()
 		return
 	end
 	local saved = {}
+	EatSticks(true)
 	if SetGamePadFreeLook and IsGamePadFreelookEnabled then
 		local on = IsGamePadFreelookEnabled() and true or false
 		if pcall(SetGamePadFreeLook, false) then
