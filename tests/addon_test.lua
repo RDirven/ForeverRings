@@ -634,6 +634,25 @@ Test("aiming with a stick turns on the client's stick direction buttons", functi
 	Eq(g.cvars.GamePadStickAxisButtons, "1", "on")
 end)
 
+Test("the stick still aims with a modifier held (R2 as Ctrl)", function()
+	local g = Login()
+	g.Slash("bind food F")
+	g.Press("F", true)
+	g.Press("CTRL-PADRSTICKUP", true)
+	g.Press("CTRL-PADRSTICKUP", false)
+	Eq(#g.casts, 1, "picked with Ctrl held")
+	Eq(g.env.ForeverRingsHeader:IsShown(), false, "closed")
+end)
+
+Test("opening a ring turns the stick direction buttons back on", function()
+	local g = Login()
+	g.cvars.GamePadStickAxisButtons = "0"
+	for _, fn in ipairs(g.env.ForeverRingsHeader.hooks.OnShow) do
+		fn(g.env.ForeverRingsHeader)
+	end
+	Eq(g.cvars.GamePadStickAxisButtons, "1", "back on")
+end)
+
 Test("letting go of the stick uses the slot it pointed at", function()
 	local g = Login()
 	g.Slash("bind food F")

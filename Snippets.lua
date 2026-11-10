@@ -18,17 +18,27 @@ local _, ns = ...
 
 ns.DEAD_ZONE = 40
 
+-- The direction/confirm/back keys, also with a modifier held: a pad button
+-- set as Ctrl (R2 by default) turns PADRSTICKUP into CTRL-PADRSTICKUP, which
+-- would otherwise miss the ring and leave the stick dead.
+local GRAB = {}
+for _, mod in ipairs({ "", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "ALT-CTRL-" }) do
+	for _, key in ipairs({
+		{ "key-up", "ForeverRingsDir_up" }, { "key-right", "ForeverRingsDir_right" },
+		{ "key-down", "ForeverRingsDir_down" }, { "key-left", "ForeverRingsDir_left" },
+		{ "key-confirm", "ForeverRingsConfirm" }, { "key-back", "ForeverRingsBack" },
+	}) do
+		GRAB[#GRAB + 1] = ('		owner:SetBindingClick(true, "%s" .. owner:GetAttribute("%s"), "%s")'):format(mod, key[1], key[2])
+	end
+end
+
 -- Expects local `openKey`. Shows the ring and grabs the direction/confirm/back keys.
 local OPEN = [[
 	owner:SetAttribute("active", openKey)
 	if not owner:IsShown() then
 		owner:Show()
-		owner:SetBindingClick(true, owner:GetAttribute("key-up"), "ForeverRingsDir_up")
-		owner:SetBindingClick(true, owner:GetAttribute("key-right"), "ForeverRingsDir_right")
-		owner:SetBindingClick(true, owner:GetAttribute("key-down"), "ForeverRingsDir_down")
-		owner:SetBindingClick(true, owner:GetAttribute("key-left"), "ForeverRingsDir_left")
-		owner:SetBindingClick(true, owner:GetAttribute("key-confirm"), "ForeverRingsConfirm")
-		owner:SetBindingClick(true, owner:GetAttribute("key-back"), "ForeverRingsBack")
+]] .. table.concat(GRAB, "\n") .. [[
+
 	end
 	owner:SetAttribute("aim-dx", nil)
 	owner:SetAttribute("aim-dy", nil)

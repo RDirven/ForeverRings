@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - **Spell ranks**: spells show their rank everywhere (picker, ring, slot names), e.g. *Arcane Intellect (Rank 2)*. The picker lists each spell's highest rank first.
 - **Hold camera still** is now a setting (on by default) and actually holds it still: while a ring is open the sticks are taken away from the camera, so the right stick only aims.
+- Fixed: the controller sometimes couldn't aim (while the mouse still worked) until a /reload. Rings now also listen to the stick while a modifier like R2 is held, and turn the stick direction buttons back on when something switched them off.
 
 ## 0.5.0
 

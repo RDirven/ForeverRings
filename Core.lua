@@ -90,12 +90,17 @@ local function EnsureTrigger(key)
 	return triggers[key]
 end
 
-local function ApplyInput()
-	-- Without this the client never sends PADRSTICKUP and friends, so the
-	-- sticks can't aim. Unbound stick directions do nothing, so it's safe on.
+-- Without this the client never sends PADRSTICKUP and friends, so the
+-- sticks can't aim. Unbound stick directions do nothing, so it's safe on.
+-- Checked again every time a ring opens, in case something turned it off.
+local function EnsureStickButtons()
 	if ForeverRingsDB.input ~= "dpad" and GetCVar and GetCVar("GamePadStickAxisButtons") ~= "1" then
 		SetCVar("GamePadStickAxisButtons", "1")
 	end
+end
+
+local function ApplyInput()
+	EnsureStickButtons()
 	local keys = INPUTS[ForeverRingsDB.input] or INPUTS.rstick
 	for i, dir in ipairs(DIRECTIONS) do
 		header:SetAttribute("key-" .. dir, keys[i])
@@ -113,6 +118,7 @@ local function CreateHeader()
 	header:EnableMouse(false)
 	header:SetAttribute("depth", 0)
 	header:Hide()
+	header:HookScript("OnShow", EnsureStickButtons)
 
 	for _, dir in ipairs(DIRECTIONS) do
 		local button = SecureButton("ForeverRingsDir_" .. dir, ns.snippets.direction, { "AnyDown", "AnyUp" })
