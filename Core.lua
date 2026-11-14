@@ -223,12 +223,17 @@ events:SetScript("OnEvent", function(_, event)
 		MigrateMain()
 		ns.ThawCamera()
 		CreateHeader()
-		-- Buttons set before ring buttons became override bindings.
-		for key in pairs(ns.autoRings) do
-			ForeverRingsDB.binds[key] = ForeverRingsDB.binds[key] or GetBindingKey(ns.TriggerCommand(key))
-		end
-		for key in pairs(ForeverRingsDB.rings) do
-			ForeverRingsDB.binds[key] = ForeverRingsDB.binds[key] or GetBindingKey(ns.TriggerCommand(key))
+		-- Rings now live on the action bar. Buttons set in older versions
+		-- are removed once, so they stop overriding the game's own bindings.
+		if not ForeverRingsDB.keysCleared then
+			for _, key in ipairs(ns.RingKeys()) do
+				for _, binding in ipairs({ GetBindingKey(ns.TriggerCommand(key)) }) do
+					SetBinding(binding)
+				end
+			end
+			ForeverRingsDB.binds = {}
+			ForeverRingsDB.keysCleared = true
+			SaveBindings(GetCurrentBindingSet())
 		end
 		events:RegisterEvent("BAG_UPDATE_DELAYED")
 		events:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -500,6 +505,96 @@ local function VisibleSlots()
 		frame = EnumerateFrames(frame)
 	end
 	return slots
+end
+
+local function RingMacroIndex(key)
+	local index = GetMacroIndexByName(("FR " .. ns.RingLabel(key)):sub(1, 16))
+	return index and index > 0 and index or nil
+end
+
+-- First action slot holding this ring's macro, or nil.
+function ns.RingOnBar(key)
+	local index = RingMacroIndex(key)
+	if index then
+		for slot = 1, 180 do
+			local kind, id = GetActionInfo(slot)
+			if kind == "macro" and id == index then
+				return slot
+			end
+		end
+	end
+end
+
+-- Puts the ring in this action slot (moving it if it was elsewhere). What
+-- was in the slot goes back to the spellbook/bags, like dragging over it.
+function ns.PlaceRingInSlot(key, slot)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ns.RemoveRingFromBar(key)
+	local name = ns.PickupRingMacro(key)
+	if not name then
+		return nil, "Couldn't create the macro."
+	end
+	PlaceAction(slot)
+	ClearCursor()
+	return ns.RingLabel(key) .. " is on that button now."
+end
+
+function ns.RemoveRingFromBar(key)
+	if InCombatLockdown() then
+		return COMBAT
+	end
+	local index, removed = RingMacroIndex(key), 0
+	if index then
+		for slot = 1, 180 do
+			local kind, id = GetActionInfo(slot)
+			if kind == "macro" and id == index then
+				PickupAction(slot)
+				ClearCursor()
+				removed = removed + 1
+			end
+		end
+	end
+	return removed > 0 and (ns.RingLabel(key) .. " is off your action bar.") or (ns.RingLabel(key) .. " wasn't on your action bar.")
+end
+
+-- Tells the settings screen which action slot a pressed button uses. Bound
+-- buttons go through ActionButtonDown/MultiActionButtonDown; clicked ones
+-- through PreClick. The slot is read as the button is pressed, so L2/R2
+-- pages count.
+local hookedFunctions, hookedButtons = false, {}
+
+function ns.HookActionButtons()
+	if not hookedFunctions and hooksecurefunc then
+		hookedFunctions = true
+		if ActionButtonDown then
+			hooksecurefunc("ActionButtonDown", function(id)
+				local button = GetActionButtonForID and GetActionButtonForID(id) or _G["ActionButton" .. id]
+				if button then
+					ns.OnActionButtonPressed(button.action)
+				end
+			end)
+		end
+		if MultiActionButtonDown then
+			hooksecurefunc("MultiActionButtonDown", function(bar, id)
+				local button = _G[bar .. "Button" .. id]
+				if button then
+					ns.OnActionButtonPressed(button.action)
+				end
+			end)
+		end
+	end
+	local frame = EnumerateFrames and EnumerateFrames()
+	while frame do
+		if not hookedButtons[frame] and type(rawget(frame, "action")) == "number" and frame.HookScript then
+			hookedButtons[frame] = true
+			frame:HookScript("PreClick", function(self)
+				ns.OnActionButtonPressed(self.action)
+			end)
+		end
+		frame = EnumerateFrames(frame)
+	end
 end
 
 -- Puts the ring's macro straight into the first free action bar slot.

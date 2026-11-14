@@ -2,14 +2,13 @@
 
 ## Unreleased
 
-- **New ring list**: every ring row has its own buttons: **Edit**, **Bar**, **key** (shows the ring's button; click to set it, right-click to remove it), **x** (remove the button), **+** (add something to the ring) and **-** (delete the ring, click twice). The buttons at the bottom right are gone.
-- **Bar puts the ring straight on your action bar**, in the first free slot, and says where. No more dragging; if your bars are full it stays on your cursor. `/frings bar <ring>` does the same.
-- While editing a ring, **Back**, **Rename**, **+** (add a slot) and **-** (clear the slot) sit above the list.
-- **Works the same on a controller**: in the ring list, Left/Right walks a row's buttons and A presses one; X on the key button removes the key. The right stick browses too.
+- **Rings live on your action bar now, not on hidden buttons.** Every ring row has **Edit**, **Set key**, **Clear**, **+** and **-**. *Set key* asks you to press the action bar button where the ring should go (L2/R2 combos included) and puts it there; *Clear* takes it off your bars. `/frings bar <ring>` puts it in the first free visible slot.
+- Ring buttons set in older versions are removed once, so the game's own gamepad bindings work again. (If a button still does nothing, restore Blizzard's default gamepad bindings in the Key Bindings menu.)
+- **+** adds something to a ring, **-** deletes it (click twice). While editing a ring, **Back**, **Rename**, **+** (add a slot) and **-** (clear the slot) sit above the list. The bottom-right buttons are gone.
+- **Works the same on a controller**: in the ring list, Left/Right walks a row's buttons and A presses one; Y is Set key. The right stick browses too.
 - **Every ring has its own icon** (Main, Mounts, Quest, Tools and empty rings showed none). Sub-ring slots show the icon of the ring they open.
-- **Any two pad buttons as a combo**, e.g. L2 + Triangle: hold the first, press the second. If the first isn't a modifier yet, it becomes a free one (Alt, Shift or Ctrl); a quick tap of it still does what it did before.
-- `/frings unbind <ring>` removes a ring's button.
-- Fixed: a ring bound to the D-pad took that button away from the settings screen, so you couldn't browse with it.
+- Fixed: a ring bound to the D-pad took that button away from the settings screen.
+- Fixed: right after a reload the controller couldn't move through the settings screen until you reopened it. The screen now reads the gamepad itself.
 
 ## 0.5.1
 

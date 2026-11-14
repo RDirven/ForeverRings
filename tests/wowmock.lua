@@ -197,6 +197,9 @@ function M.New(world)
 
 	local UIParent = CreateFrame("Frame", "UIParent")
 	UIParent:SetSize(1920, 1080)
+	for i = 1, 12 do
+		CreateFrame("CheckButton", "ActionButton" .. i, UIParent, "ActionBarButtonTemplate").action = i
+	end
 
 	-- Secure execution --------------------------------------------------------
 
@@ -422,8 +425,18 @@ function M.New(world)
 			if a then return a[1], a[2] end
 		end,
 		PlaceAction = function(slot)
-			game.actions[slot] = game.cursorInfo
-			game.cursorInfo = nil
+			game.actions[slot], game.cursorInfo = game.cursorInfo, game.actions[slot]
+		end,
+		PickupAction = function(slot)
+			game.cursorInfo, game.actions[slot] = game.actions[slot], nil
+		end,
+		ActionButtonDown = function() end,
+		hooksecurefunc = function(name, fn)
+			local original = env[name]
+			env[name] = function(...)
+				original(...)
+				fn(...)
+			end
 		end,
 		IsShiftKeyDown = function() return game.modifiers.shift end,
 		IsControlKeyDown = function() return game.modifiers.ctrl end,

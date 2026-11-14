@@ -16,9 +16,8 @@ local LIST_WIDTH = 480
 -- Buttons on every ring row, left to right.
 local CELLS = {
 	{ name = "edit", label = "Edit", width = 46, tip = "Edit this ring." },
-	{ name = "bar", label = "Bar", width = 40, tip = "Put this ring on your action bar: press it to open\nthe ring, aim, and let go of the stick." },
-	{ name = "key", label = "Set key", width = 96, tip = "Click: set the button that opens this ring.\nRight-click: remove it." },
-	{ name = "clear", label = "x", width = 24, tip = "Remove this ring's button." },
+	{ name = "setbar", label = "Set key", width = 80, tip = "Then press the action bar button where this ring\nshould go, e.g. L2 + Triangle." },
+	{ name = "clearbar", label = "Clear", width = 54, tip = "Take this ring off your action bars." },
 	{ name = "plus", label = "+", width = 26, tip = "Add something to this ring." },
 	{ name = "minus", label = "-", width = 26, tip = "Delete this ring (click twice)." },
 }
@@ -56,7 +55,7 @@ local state = {
 	nameIndex = 1,
 	welcome = false,
 	capture = nil,      -- ring key, or "config" for the settings button
-	pending = nil,      -- gamepad button held while capturing, for combos
+	barPick = nil,      -- ring waiting for an action bar button (capture = "bar")
 	confirmDelete = nil,
 	message = nil,
 	col = nil,          -- ring list: focused row button (gamepad), index into CELLS
@@ -184,8 +183,8 @@ local PICKERS = {
 }
 
 local WELCOME = "|cff59bfffWelcome to Forever Rings!|r\n\n"
-	.. "1. Main is selected. Press |cffffffffY|r, then the button\n   that should open it (L3 works great).\n"
-	.. "2. Press |cffffffffB|r to close. Hold your button,\n   aim with the right stick, release.\n\n"
+	.. "1. Main is selected. Press |cffffffffY|r (or Set key), then the\n   action bar button where it should go.\n"
+	.. "2. Press that button to open the ring, aim with the\n   stick, let go to use.\n\n"
 	.. "The Settings slot in Main brings you back here."
 
 -- Names to pick from, since typing on a controller is no fun.
@@ -334,10 +333,6 @@ local function SetHint(text)
 	ui.hint:SetText(state.message and ("|cffffd100" .. state.message .. "|r   " .. text) or text)
 end
 
-local function BindingShort(binding)
-	return binding and (GetBindingText and GetBindingText(binding, true) or binding)
-end
-
 local function SetEnabled(button, on)
 	if on then
 		button:Enable()
@@ -360,12 +355,11 @@ local function RenderCells(row, key, selected)
 	if not show then
 		return
 	end
-	local cells, binding = row.cells, ns.GetRingBinding(key)
-	cells[3]:SetText(BindingShort(binding) or "Set key")
-	SetEnabled(cells[4], binding ~= nil)
-	SetEnabled(cells[5], ns.IsEditable(key))
-	SetEnabled(cells[6], ns.IsDeletable(key))
-	cells[6]:SetText(state.confirmDelete == key and "|cffff5555?|r" or "-")
+	local cells = row.cells
+	SetEnabled(cells[3], ns.RingOnBar(key) ~= nil)
+	SetEnabled(cells[4], ns.IsEditable(key))
+	SetEnabled(cells[5], ns.IsDeletable(key))
+	cells[5]:SetText(state.confirmDelete == key and "|cffff5555?|r" or "-")
 end
 
 local function RenderList(items, selected)
@@ -503,7 +497,8 @@ local function RenderRings()
 	end
 
 	RenderPreview(key)
-	local lines = { "Button: " .. BindingText(ns.GetRingBinding(key)) }
+	local slot = ns.RingOnBar(key)
+	local lines = { slot and ("On your action bar (slot " .. slot .. ").") or "Not on your action bar yet: press Set key." }
 	if ns.autoRings[key] then
 		lines[#lines + 1] = "Fills itself from your bags and collection."
 	else
@@ -514,9 +509,9 @@ local function RenderRings()
 		return SetHint("|cffff5555Press - (or X) again to delete " .. ns.RingLabel(key) .. "|r   B cancel")
 	end
 	if state.col then
-		return SetHint("Left/Right choose   A press" .. (CELLS[state.col].name == "key" and "   X remove key" or "") .. "   B back")
+		return SetHint("Left/Right choose   A press   B back")
 	end
-	SetHint("A " .. (ns.IsEditable(key) and "edit" or "view") .. "   Y set key" .. (ns.IsDeletable(key) and "   X delete" or "") .. "   Right row buttons   B close")
+	SetHint("A " .. (ns.IsEditable(key) and "edit" or "view") .. "   Y set key (action bar)" .. (ns.IsDeletable(key) and "   X delete" or "") .. "   Right row buttons   B close")
 end
 
 local function RenderSettings()
@@ -553,9 +548,11 @@ Render = function()
 	RenderTabs()
 	if state.capture then
 		RenderToolbar()
-		local target = state.capture == "config" and "the settings screen" or ns.RingLabel(state.capture)
-		ui.capture:SetText("Press the button for " .. target .. "\n\n|cff888888" .. ns.ButtonTip()
-			.. "\nFor a combo, hold the first button and press the second\n(e.g. L2 + Triangle). Keys and side mouse buttons work too.\nB, Esc or right-click cancels.|r")
+		if state.capture == "bar" then
+			ui.capture:SetText("Press the action bar button where " .. ns.RingLabel(state.barPick) .. " should go\n(for example L2 + Triangle). An empty one is best.\n\n|cff888888Right-click here or wait 15 seconds to cancel.|r")
+		else
+			ui.capture:SetText("Press the button that opens this screen.\n\n|cff888888B, Esc or right-click cancels.|r")
+		end
 		ui.capture:Show()
 		SetHint("")
 		return
@@ -592,6 +589,7 @@ local function Close()
 	state.confirmDelete = nil
 	state.welcome = false
 	state.col = nil
+	state.barPick, state.barToken = nil, nil
 	ui.frame:EnableKeyboard(false)
 	ui.frame:EnableGamePadButton(false)
 	ns.configOpen = false
@@ -610,7 +608,7 @@ local function Move(current, step, count)
 end
 
 local actions = {}
-local NextCell, RowAction
+local NextCell, RowAction, StartBarPick, EndBarPick
 
 function actions.rings(action)
 	local key = CurrentRingKey()
@@ -676,8 +674,6 @@ function actions.rings(action)
 		return
 	elseif key and state.col and action == "accept" then
 		return RowAction(key, CELLS[state.col].name, "LeftButton")
-	elseif key and state.col and action == "x" and CELLS[state.col].name == "key" then
-		return RowAction(key, "key", "RightButton")
 	elseif state.col and action == "back" then
 		state.col = nil
 		return
@@ -703,7 +699,7 @@ function actions.rings(action)
 			state.mode, state.slot = "edit", 1
 		end
 	elseif action == "y" and key then
-		StartCapture(key)
+		StartBarPick(key)
 	elseif action == "x" and key and ns.IsDeletable(key) then
 		if state.confirmDelete == key then
 			state.confirmDelete = nil
@@ -744,7 +740,7 @@ NextCell = function(key, col, step)
 	while c >= 1 and c <= #CELLS do
 		local name = CELLS[c].name
 		if (name ~= "plus" or ns.IsEditable(key)) and (name ~= "minus" or ns.IsDeletable(key))
-			and (name ~= "clear" or ns.GetRingBinding(key)) then
+			and (name ~= "clearbar" or ns.RingOnBar(key)) then
 			return c
 		end
 		c = c + step
@@ -880,7 +876,47 @@ local function PutOnActionBar(key)
 	Render()
 end
 
--- A ring row's button: edit, key (right-click removes it), bar, + or -.
+-- Set key: the next action bar button pressed gets the ring. The menu's own
+-- buttons step aside so the game's bindings (and L2/R2 pages) work as usual.
+EndBarPick = function(message)
+	state.capture, state.barPick, state.barConfirm, state.barToken = nil, nil, nil, nil
+	Say(message)
+	ApplyBindings()
+	Render()
+end
+
+StartBarPick = function(key)
+	state.capture, state.barPick, state.barConfirm = "bar", key, nil
+	ClearOverrideBindings(ui.frame)
+	ui.frame:EnableKeyboard(false)
+	ui.frame:EnableGamePadButton(false)
+	ns.HookActionButtons()
+	local token = {}
+	state.barToken = token
+	C_Timer.After(15, function()
+		if state.barToken == token then
+			EndBarPick("No button pressed, cancelled.")
+		end
+	end)
+	Render()
+end
+
+-- Called (via hooks) whenever an action button is pressed.
+function ns.OnActionButtonPressed(slot)
+	if state.capture ~= "bar" or not (ui and ui.frame:IsShown()) or type(slot) ~= "number" then
+		return
+	end
+	local key = state.barPick
+	if HasAction(slot) and ns.RingOnBar(key) ~= slot and state.barConfirm ~= slot then
+		state.barConfirm = slot
+		Say("That button already has something. Press it again to replace it, or pick an empty one.")
+		return Render()
+	end
+	local message, err = ns.PlaceRingInSlot(key, slot)
+	EndBarPick(message or err)
+end
+
+-- A ring row's button: edit, Set key (action bar), Clear, + or -.
 RowAction = function(key, name, button)
 	state.message = nil
 	if name ~= "minus" then
@@ -888,17 +924,12 @@ RowAction = function(key, name, button)
 	end
 	if name == "edit" then
 		state.mode, state.slot, state.col = "edit", 1, nil
-	elseif name == "key" or name == "clear" then
+	elseif name == "setbar" then
 		state.mode = "list"
-		if button == "RightButton" or name == "clear" then
-			if ns.GetRingBinding(key) and Try(ns.BindRing(key, nil)) then
-				Say(ns.RingLabel(key) .. " has no button now.")
-			end
-		else
-			StartCapture(key)
-		end
-	elseif name == "bar" then
-		return PutOnActionBar(key)
+		return StartBarPick(key)
+	elseif name == "clearbar" then
+		state.mode = "list"
+		Say(ns.RemoveRingFromBar(key))
 	elseif name == "plus" then
 		if not ns.IsEditable(key) then
 			Say(ns.RingLabel(key) .. " fills itself.")
@@ -935,27 +966,10 @@ local function IsEmulatedModifier(button)
 end
 
 -- "SHIFT-PAD2" when a modifier is held, in WoW's ALT-CTRL-SHIFT order.
--- `extra` adds one more ("ALT", "CTRL" or "SHIFT").
-local function WithModifiers(key, extra)
-	local alt = extra == "ALT" or (IsAltKeyDown and IsAltKeyDown())
-	local ctrl = extra == "CTRL" or (IsControlKeyDown and IsControlKeyDown())
-	local shift = extra == "SHIFT" or (IsShiftKeyDown and IsShiftKeyDown())
-	return (alt and "ALT-" or "") .. (ctrl and "CTRL-" or "") .. (shift and "SHIFT-" or "") .. key
-end
-
--- WoW only knows Shift, Ctrl and Alt as modifiers. To bind L2 + Triangle,
--- L2 has to become one: the first of Alt, Shift, Ctrl that's still free.
--- (A quick tap of it still does what it did before.)
-local MODIFIER_CVARS = { ALT = "GamePadEmulateAlt", SHIFT = "GamePadEmulateShift", CTRL = "GamePadEmulateCtrl" }
-
-local function MakeModifier(button)
-	for _, mod in ipairs({ "ALT", "SHIFT", "CTRL" }) do
-		local value = GetCVar and GetCVar(MODIFIER_CVARS[mod])
-		if value == nil or value == "" or value:upper() == "NONE" then
-			SetCVar(MODIFIER_CVARS[mod], button)
-			return mod
-		end
-	end
+local function WithModifiers(key)
+	return (IsAltKeyDown and IsAltKeyDown() and "ALT-" or "")
+		.. (IsControlKeyDown and IsControlKeyDown() and "CTRL-" or "")
+		.. (IsShiftKeyDown and IsShiftKeyDown() and "SHIFT-" or "") .. key
 end
 
 local function FinishCapture(key)
@@ -988,18 +1002,19 @@ end
 -- While capturing, our own override bindings are off so every key reaches us.
 StartCapture = function(target)
 	state.capture = target
-	state.pending = nil
 	ClearOverrideBindings(ui.frame)
 	ui.frame:EnableKeyboard(true)
 	ui.frame:SetPropagateKeyboardInput(false)
 	ui.frame:EnableGamePadButton(true)
 end
 
+-- The screen reads the gamepad and keyboard itself instead of through key
+-- bindings: right after a reload, Blizzard's gamepad navigation could get to
+-- bindings first and the controller did nothing until the screen reopened.
 ApplyBindings = function()
 	ClearOverrideBindings(ui.frame)
-	for key in pairs(KEYS) do
-		SetOverrideBindingClick(ui.frame, true, key, "ForeverRingsConfigInput", key)
-	end
+	ui.frame:EnableKeyboard(true)
+	ui.frame:EnableGamePadButton(true)
 end
 
 -- Frame -------------------------------------------------------------------------
@@ -1201,48 +1216,40 @@ local function Build()
 	-- Middle and side mouse buttons can open rings too; right click cancels.
 	local MOUSE_KEYS = { MiddleButton = "BUTTON3", Button4 = "BUTTON4", Button5 = "BUTTON5", RightButton = "ESCAPE" }
 	frame:SetScript("OnMouseDown", function(_, button)
+		if state.capture == "bar" then
+			if button == "RightButton" then
+				EndBarPick("Cancelled.")
+			end
+			return
+		end
 		if state.capture and MOUSE_KEYS[button] then
 			FinishCapture(MOUSE_KEYS[button])
 		end
 	end)
 
-	local input = CreateFrame("Button", "ForeverRingsConfigInput", frame)
-	input:RegisterForClicks("AnyDown")
-	input:SetScript("OnClick", function(_, key) HandleKey(key) end)
 
 	-- Modifiers alone don't count: hold one and press the second button.
-	frame:SetScript("OnKeyDown", function(_, key)
-		if state.capture and not MODIFIERS[key] then
-			FinishCapture(WithModifiers(key))
+	-- Keys the screen doesn't use (chat, screenshots...) go on to the game.
+	frame:SetScript("OnKeyDown", function(self, key)
+		if state.capture then
+			self:SetPropagateKeyboardInput(false)
+			if not MODIFIERS[key] then
+				FinishCapture(WithModifiers(key))
+			end
+			return
+		end
+		self:SetPropagateKeyboardInput(KEYS[key] == nil)
+		if KEYS[key] then
+			HandleKey(key)
 		end
 	end)
-	-- Gamepad: a button counts when it's let go, so a second button pressed
-	-- while the first is held makes a combo (L2 + Triangle).
 	frame:SetScript("OnGamePadButtonDown", function(_, button)
-		if not state.capture or IsEmulatedModifier(button) then
-			return
-		end
-		local first = state.pending
-		if not first then
-			state.pending = button
-			return
-		end
-		state.pending = nil
-		local mod = MakeModifier(first)
-		if not mod then
-			Say("Shift, Ctrl and Alt are all in use. Hold one of them instead.")
-			return Render()
-		end
-		Say((GetBindingText and GetBindingText(first) or first) .. " now works as " .. mod:sub(1, 1) .. mod:sub(2):lower() .. ".")
-		local message = state.message
-		FinishCapture(WithModifiers(button, mod))
-		state.message = message .. "  " .. (state.message or "")
-		Render()
-	end)
-	frame:SetScript("OnGamePadButtonUp", function(_, button)
-		if state.capture and state.pending == button then
-			state.pending = nil
-			FinishCapture(WithModifiers(button))
+		if state.capture then
+			if not IsEmulatedModifier(button) then
+				FinishCapture(WithModifiers(button))
+			end
+		elseif KEYS[button] then
+			HandleKey(button)
 		end
 	end)
 	frame:SetScript("OnEvent", function()
@@ -1315,18 +1322,6 @@ function ns.ToggleConfig()
 	ns.ApplyRingBindings()
 	ApplyBindings()
 	Render()
-	-- Right after the first open something can still take the screen's
-	-- buttons back. Check a moment later and reclaim them.
-	C_Timer.After(0.2, function()
-		if not (ui.frame:IsShown() and not state.capture and GetBindingAction) then
-			return
-		end
-		local action = GetBindingAction("PADDDOWN", true)
-		if action ~= "CLICK ForeverRingsConfigInput:PADDDOWN" then
-			ApplyBindings()
-			ns.Print("Took the menu buttons back from: " .. tostring(action ~= "" and action or "nothing"))
-		end
-	end)
 end
 
 -- First login: open on the Main ring with a short how-to.
