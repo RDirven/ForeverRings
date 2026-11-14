@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **New ring list**: every ring row has its own buttons: **Edit**, **Bar**, **key** (shows the ring's button; click to set it, right-click to remove it), **x** (remove the button), **+** (add something to the ring) and **-** (delete the ring, click twice). The buttons at the bottom right are gone.
+- **Bar puts the ring straight on your action bar**, in the first free slot, and says where. No more dragging; if your bars are full it stays on your cursor. `/frings bar <ring>` does the same.
+- While editing a ring, **Back**, **Rename**, **+** (add a slot) and **-** (clear the slot) sit above the list.
+- **Works the same on a controller**: in the ring list, Left/Right walks a row's buttons and A presses one; X on the key button removes the key. The right stick browses too.
+- **Every ring has its own icon** (Main, Mounts, Quest, Tools and empty rings showed none). Sub-ring slots show the icon of the ring they open.
+- **Any two pad buttons as a combo**, e.g. L2 + Triangle: hold the first, press the second. If the first isn't a modifier yet, it becomes a free one (Alt, Shift or Ctrl); a quick tap of it still does what it did before.
+- `/frings unbind <ring>` removes a ring's button.
+- Fixed: a ring bound to the D-pad took that button away from the settings screen, so you couldn't browse with it.
+
 ## 0.5.1
 
 - **Spell ranks**: spells show their rank everywhere (picker, ring, slot names), e.g. *Arcane Intellect (Rank 2)*. The picker lists each spell's highest rank first.

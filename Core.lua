@@ -149,17 +149,24 @@ end
 
 -- Ring buttons are priority override bindings, so they win over Blizzard's
 -- own gamepad bindings and action bar overrides on the same button.
+-- Off while the settings screen is open: a ring on the D-pad would otherwise
+-- steal the button the screen uses to move around.
 local function ApplyRingBindings()
 	if InCombatLockdown() then
 		return
 	end
 	ClearOverrideBindings(binder)
+	if ns.configOpen then
+		return
+	end
 	for key, binding in pairs(ForeverRingsDB.binds) do
 		if triggers[key] then
 			SetOverrideBindingClick(binder, true, binding, "ForeverRingsTrigger_" .. key, "LeftButton")
 		end
 	end
 end
+
+ns.ApplyRingBindings = ApplyRingBindings
 
 -- Pushes every ring into the header's secure attributes. Out of combat only.
 local lastCounts = {}
@@ -242,6 +249,9 @@ events:SetScript("OnEvent", function(_, event)
 	elseif event == "PLAYER_REGEN_ENABLED" then
 		if refreshPending then
 			RefreshAll()
+		else
+			-- In case the settings screen closed too late for combat.
+			ApplyRingBindings()
 		end
 	else
 		if event == "BAG_UPDATE_DELAYED" and header:IsShown() then
@@ -431,7 +441,7 @@ end
 
 -- A general macro that clicks the ring button, put on the cursor so it can be
 -- dropped on an action bar. One click opens the ring, the next one picks.
-local QUESTION_MARK = 134400
+local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 function ns.PickupRingMacro(key)
 	if InCombatLockdown() then
@@ -440,8 +450,12 @@ function ns.PickupRingMacro(key)
 	EnsureTrigger(key)
 	local name = ("FR " .. ns.RingLabel(key)):sub(1, 16)
 	local body = "/click ForeverRingsTrigger_" .. key .. " LeftButton 1"
-	local first = ns.resolved and ns.resolved[key] and ns.resolved[key][1]
-	local icon = first and type(first.icon) == "number" and first.icon or QUESTION_MARK
+	-- Macros want a file ID (or a bare icon name), not a path.
+	local icon = ns.RingIcon(key)
+	if type(icon) == "string" then
+		icon = GetFileIDFromPath and GetFileIDFromPath(icon) or icon:match("([^\\]+)$")
+	end
+	icon = icon or QUESTION_MARK
 	local index = GetMacroIndexByName(name)
 	if index and index > 0 then
 		EditMacro(index, name, icon, body)
@@ -456,7 +470,61 @@ function ns.PickupRingMacro(key)
 		return nil, "Couldn't create the macro."
 	end
 	PickupMacro(index)
-	return name
+	return name, index
+end
+
+-- Action bar slots in the order they're tried: the main bar, then the
+-- bottom bars, the side bars and the main bar's second page.
+local SLOT_ORDER = {}
+for _, range in ipairs({ { 1, 12 }, { 61, 72 }, { 49, 60 }, { 25, 36 }, { 37, 48 }, { 13, 24 } }) do
+	for slot = range[1], range[2] do
+		SLOT_ORDER[#SLOT_ORDER + 1] = slot
+	end
+end
+
+-- Action slots of the action buttons that are on screen right now, in the
+-- order the client lists them. The gamepad action bar shows other slots than
+-- bars 1-6, so this asks the buttons instead of guessing.
+local function VisibleSlots()
+	if not EnumerateFrames then
+		return SLOT_ORDER
+	end
+	local slots, seen = {}, {}
+	local frame = EnumerateFrames()
+	while frame do
+		local slot = rawget(frame, "action")
+		if type(slot) == "number" and slot > 0 and not seen[slot] and frame:IsVisible() then
+			seen[slot] = true
+			slots[#slots + 1] = slot
+		end
+		frame = EnumerateFrames(frame)
+	end
+	return slots
+end
+
+-- Puts the ring's macro straight into the first free action bar slot.
+-- Returns a message; when no slot is free the macro stays on the cursor.
+function ns.PlaceRingOnBar(key)
+	local name, index = ns.PickupRingMacro(key)
+	if not name then
+		return nil, index
+	end
+	local slots = VisibleSlots()
+	for _, slot in ipairs(slots) do
+		local kind, id = GetActionInfo(slot)
+		if kind == "macro" and id == index then
+			ClearCursor()
+			return ns.RingLabel(key) .. " is already on your action bar (slot " .. slot .. ")."
+		end
+	end
+	for _, slot in ipairs(slots) do
+		if not HasAction(slot) then
+			PlaceAction(slot)
+			ClearCursor()
+			return ns.RingLabel(key) .. " is on your action bar (slot " .. slot .. "). Move it like any other button."
+		end
+	end
+	return "Your action bars are full: drop '" .. name .. "' (on your cursor) where you want it."
 end
 
 function ns.SetStyle(name)
@@ -690,6 +758,16 @@ function commands.list(name)
 	end
 end
 
+function commands.unbind(name)
+	local key = name:lower()
+	if not triggers[key] then
+		return Print("Usage: /frings unbind <ring>")
+	end
+	if Check(ns.BindRing(key, nil)) then
+		Print("'" .. key .. "' has no button now.")
+	end
+end
+
 function commands.bind(args)
 	local key, binding = args:match("^(%S+)%s+(%S+)$")
 	if not (key and triggers[key:lower()]) then
@@ -707,11 +785,11 @@ end
 function commands.bar(name)
 	local key = name:lower()
 	if not triggers[key] then
-		return Print("Usage: /frings bar <ring>   puts a button for the ring on your cursor")
+		return Print("Usage: /frings bar <ring>   puts the ring on your action bar")
 	end
-	local macro = Check(ns.PickupRingMacro(key))
-	if macro then
-		Print("Drop '" .. macro .. "' on your action bar. Click to open the ring, aim, click again (or left-click) to use.")
+	local message = Check(ns.PlaceRingOnBar(key))
+	if message then
+		Print(message)
 	end
 end
 
@@ -762,12 +840,12 @@ function commands.help()
 	Print("Bind rings under Options > Keybindings > AddOns > Forever Rings, or with /frings.")
 	Print("Hold the ring button, aim with the stick, release (or press A). B goes back.")
 	Print("/frings new|delete <ring>  ·  add <ring> <link|ring:name>  ·  remove <ring> <n>")
-	Print("/frings bar <ring>   put a ring on your action bar")
+	Print("/frings bar <ring>   put a ring on your action bar  ·  unbind <ring>   remove its button")
 	Print("/frings list [ring]  ·  bind <ring> <key>  ·  style clean|classic  ·  input rstick|lstick|dpad")
 	Print("/frings export <ring>  ·  import <code>   share rings with friends")
 end
 
-local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, bar = true, input = true, refresh = true, config = true, import = true }
+local SECURE_COMMANDS = { new = true, delete = true, add = true, remove = true, bind = true, unbind = true, bar = true, input = true, refresh = true, config = true, import = true }
 
 SLASH_FOREVERRINGS1 = "/frings"
 SLASH_FOREVERRINGS2 = "/foreverrings"

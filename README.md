@@ -46,7 +46,9 @@ Fully playable on a controller. Mouse and keyboard work too.
 
 Fill slots from **Bags**, **Spells**, **Mounts**, **Toys**, **Macros** or other **Rings** (sub-rings). The preview shows the ring exactly as it will appear.
 
-With a mouse: click the tabs, rows and slots, scroll the list with the wheel, and use the buttons at the bottom right (**Edit**, **Set key**, **Put on action bar**, **Rename**, **Back**). Drag a spell, item, mount or macro onto a slot in the preview, or onto a ring in the list to add it at the end. Right-click a slot to clear it. Drag a ring out of the list to put it on your action bar. When setting a key, a middle or side mouse button works too.
+Every ring row has its own buttons: **Edit**, **key** (click to set the ring's button, right-click to remove it), **Bar** (put the ring on your action bar), **+** (add something) and **-** (delete the ring, click twice). On a controller, Left/Right walks those buttons and A presses one. While editing a ring, **Back**, **Rename**, **+** and **-** sit above the list.
+
+With a mouse: click the tabs, rows and slots and scroll with the wheel. Drag a spell, item, mount or macro onto a slot in the preview, or onto a ring in the list to add it at the end. Right-click a slot to clear it. Drag a ring out of the list to put it on your action bar. When setting a key, a middle or side mouse button works too.
 
 **Combos** (like L1 + Circle): hold a modifier while pressing the button. On a controller, a button only counts as a modifier when the client treats it as one, e.g. `/console GamePadEmulateShift PADLSHOULDER` makes L1 act as Shift (it then no longer targets allies).
 
@@ -61,6 +63,7 @@ Everything in the settings screen is also available as a command (`/frings help`
 | `/frings add main ring:<name>` | Put a ring inside the main ring |
 | `/frings remove <ring> <n>` | Remove slot *n* (see `/frings list <ring>`) |
 | `/frings delete <name>` | Delete a ring |
+| `/frings unbind <ring>` | Remove a ring's button |
 | `/frings bar <ring>` | Put a button for the ring on your cursor, to drop on an action bar |
 | `/frings bind <ring> <key>` | Bind a ring directly, e.g. `PADLSTICK` (L3) or `PADPADDLE1` |
 | `/frings export <ring>` | Get a share code for a ring |

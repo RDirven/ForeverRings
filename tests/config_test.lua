@@ -189,7 +189,7 @@ Test("Y sets a ring button with the next gamepad press", function()
 	g.GamePadButton("PADRSHOULDER")
 	Eq(st.capture, nil, "done")
 	Eq(g.env.GetBindingKey(g.ns.TriggerCommand("food")), "PADRSHOULDER", "bound")
-	Has(ui.rows[2].right:GetText(), "PADRSHOULDER", "shown in list")
+	Has(ui.rows[2].cells[3].text, "PADRSHOULDER", "shown on the row's key button")
 	Eq(ui.frame.overrides.PAD1.name, "ForeverRingsConfigInput", "bindings back")
 
 	Pad(g, "Y")
@@ -244,11 +244,150 @@ Test("ring buttons are priority overrides, so they beat Blizzard's gamepad bindi
 	Eq(g.env.ForeverRingsDB.binds.food, nil, "one ring per button")
 end)
 
-Test("drag a ring from the list to get its action bar button", function()
+Test("drag a ring from the list to put it on the action bar", function()
 	local g, ui, st = Open()
 	ui.rows[2].scripts.OnDragStart(ui.rows[2])
-	Eq(g.cursorInfo[1], "macro", "macro on the cursor")
-	Eq(ui.frame:IsShown(), false, "screen closed to drop it")
+	Eq(g.actions[1][1], "macro", "in the first free slot")
+	Eq(ui.frame:IsShown(), true, "screen stays open")
+end)
+
+-- Row number of a ring in the list.
+local function RowOf(ui, key)
+	for i, row in ipairs(ui.rows) do
+		if ui.ringKeys[ui.listOffset + i] == key then
+			return row
+		end
+	end
+end
+
+local function Cell(row, n, button)
+	row.cells[n].scripts.OnClick(row.cells[n], button or "LeftButton")
+end
+
+Test("every ring row has Edit, Bar, key, x, + and - buttons", function()
+	local g, ui, st = Open()
+	local main = RowOf(ui, "main")
+	Eq(main.cells[1].shown, true, "buttons shown")
+	Eq(main.cells[3].text, "Set key", "no key yet")
+	Eq(main.cells[4].enabled, false, "nothing to clear yet")
+	Eq(main.cells[6].enabled, false, "Main can't be deleted")
+	Eq(RowOf(ui, "food").cells[5].enabled, false, "auto rings take no +")
+
+	Cell(RowOf(ui, "food"), 1)
+	Eq(st.mode, "edit", "Edit opens the editor")
+	Eq(g.ns.configUI.ringKeys[st.ringIndex], "food", "for that ring")
+	Pad(g, "B")
+
+	Cell(main, 3)
+	Eq(st.capture, "main", "key button starts capture")
+	g.KeyDown("F")
+	Eq(main.cells[3].text, "F", "key shown on the button")
+	Eq(main.cells[4].enabled, true, "x on")
+	Cell(main, 4)
+	Eq(g.ns.GetRingBinding("main"), nil, "x removes it")
+	Eq(g.bindings.F, nil, "key freed")
+	g.Slash("bind main F")
+	Cell(main, 3, "RightButton")
+	Eq(g.ns.GetRingBinding("main"), nil, "right-click removes it too")
+
+	Cell(main, 2)
+	Eq(g.actions[1][1], "macro", "Bar puts it on the action bar")
+	Has(st.message, "slot 1", "and says where")
+	Cell(main, 2)
+	Has(st.message, "already on your action bar", "not twice")
+	Eq(g.actions[2], nil, "no second copy")
+end)
+
+Test("row + adds to that ring, row - deletes it (twice)", function()
+	local g, ui, st = Open()
+	Pad(g, "up", "A", "B")                  -- create ring1
+	local row = RowOf(ui, "ring1")
+	Cell(row, 5)
+	Eq(st.mode, "pick", "+ opens the picker")
+	Pad(g, "A")
+	Eq(#g.env.ForeverRingsDB.rings.ring1.slots, 1, "added")
+	Pad(g, "B")
+	row = RowOf(ui, "ring1")
+	Cell(row, 6)
+	Eq(g.env.ForeverRingsDB.rings.ring1 ~= nil, true, "first click only asks")
+	Has(row.cells[6].text, "?", "button asks")
+	Cell(row, 6)
+	Eq(g.env.ForeverRingsDB.rings.ring1, nil, "second click deletes")
+end)
+
+Test("editor toolbar: + adds a slot, - clears it, Back returns", function()
+	local g, ui, st = Open()
+	Pad(g, "up", "A")                       -- create ring1, in the editor
+	Eq(ui.plus:IsShown(), true, "+ shown")
+	ui.plus.scripts.OnClick(ui.plus)
+	Pad(g, "A")
+	Eq(#g.env.ForeverRingsDB.rings.ring1.slots, 1, "slot added")
+	ui.minus.scripts.OnClick(ui.minus)
+	Eq(#g.env.ForeverRingsDB.rings.ring1.slots, 0, "slot cleared")
+	ui.back.scripts.OnClick(ui.back)
+	Eq(st.mode, "list", "back to the list")
+	Eq(ui.plus:IsShown(), false, "toolbar hidden in the list")
+end)
+
+Test("/frings unbind removes a ring's button", function()
+	local g = WoW.New(World()).Login()
+	g.Slash("bind food G")
+	g.Slash("unbind food")
+	Eq(g.ns.GetRingBinding("food"), nil, "unbound")
+	g.Press("G", true)
+	Eq(g.env.ForeverRingsHeader:IsShown(), false, "G no longer opens it")
+end)
+
+Test("gamepad: Right walks the row's buttons, A presses, X removes the key", function()
+	local g, ui, st = Open()
+	g.Slash("bind main F")
+	Pad(g, "right")
+	Eq(st.col, 1, "on Edit")
+	Eq(RowOf(ui, "main").cells[1].highlight, true, "Edit lit")
+	Has(ui.hint:GetText(), "A press", "hint")
+	Pad(g, "right", "right")
+	Has(ui.hint:GetText(), "X remove key", "key hint")
+	Pad(g, "X")
+	Eq(g.ns.GetRingBinding("main"), nil, "X removed the key")
+	Pad(g, "right", "right", "right")
+	Eq(st.col, 5, "skips x (no key now), stops at +: Main can't be deleted")
+	Pad(g, "left", "left", "left", "left", "left")
+	Eq(st.col, nil, "left off the first button")
+	Pad(g, "right", "B")
+	Eq(st.col, nil, "B leaves the buttons")
+	Eq(ui.frame:IsShown(), true, "without closing the screen")
+	Pad(g, "right", "A")
+	Eq(st.mode, "edit", "A on Edit")
+end)
+
+Test("a ring on the D-pad doesn't steal it from the settings screen", function()
+	local g = WoW.New(World()).Login()
+	g.Slash("bind main PADDUP")
+	g.Slash("")
+	local st = g.ns.configState
+	Pad(g, "down", "down", "up")
+	Eq(st.ringIndex, 2, "D-pad up moved the list")
+	Eq(g.env.ForeverRingsHeader:IsShown(), false, "no ring opened")
+	Pad(g, "B")
+	g.Press("PADDUP", true)
+	Eq(g.env.ForeverRingsHeader:IsShown(), true, "ring button back after closing")
+end)
+
+Test("combo of two pad buttons: L2 + Triangle, L2 becomes a free modifier", function()
+	local g, ui, st = Open()
+	g.cvars.GamePadEmulateAlt = "PADLSHOULDER"
+	g.cvars.GamePadEmulateShift = "none"            -- WoW Forever writes it in lower case
+	Pad(g, "Y")
+	g.GamePadButton("PADLTRIGGER", true)
+	Eq(st.capture, "main", "still waiting while L2 is held")
+	g.GamePadButton("PAD4", true)
+	Eq(st.capture, nil, "done")
+	Eq(g.ns.GetRingBinding("main"), "SHIFT-PAD4", "bound the combo")
+	Eq(g.cvars.GamePadEmulateShift, "PADLTRIGGER", "L2 is Shift now")
+	Has(st.message, "now works as Shift", "told")
+	g.GamePadButton("PAD4", false)
+	g.GamePadButton("PADLTRIGGER", false)
+	Eq(g.ns.GetRingBinding("main"), "SHIFT-PAD4", "releases change nothing")
 end)
 
 Test("B cancels button capture", function()
@@ -282,7 +421,7 @@ Test("X twice deletes a custom ring and removes it from Main", function()
 	Pad(g, "up", "A", "B")                  -- create ring1
 	g.ns.SetSlot("main", 8, { ring = "ring1" })
 	Pad(g, "X")
-	Has(ui.hint:GetText(), "Press X again", "confirm")
+	Has(ui.hint:GetText(), "(or X) again", "confirm")
 	Eq(g.env.ForeverRingsDB.rings.ring1 ~= nil, true, "not yet")
 	Pad(g, "X")
 	Eq(g.env.ForeverRingsDB.rings.ring1, nil, "deleted")
@@ -396,15 +535,52 @@ Test("mouse: dropping on an auto ring is refused", function()
 	Eq(g.cursorInfo, nil, "cursor cleared")
 end)
 
-Test("put a ring on the action bar: a macro on the cursor that clicks it", function()
+Test("put a ring on the action bar: a macro in the first free slot that clicks it", function()
 	local g, ui, st = Open()
+	g.actions[1] = { "spell", 133 }
 	g.Slash("bar food")
 	local name, _, body = g.env.GetMacroInfo(g.env.GetMacroIndexByName("FR Food"))
 	Eq(name, "FR Food", "macro made")
 	Eq(body, "/click ForeverRingsTrigger_food LeftButton 1", "clicks the ring")
-	Eq(g.cursorInfo[1], "macro", "on the cursor")
+	Eq(g.actions[1][1], "spell", "taken slot left alone")
+	Eq(g.actions[2][1], "macro", "next free slot")
+	Eq(g.cursorInfo, nil, "nothing left on the cursor")
 	g.Slash("bar food")
 	Eq(g.env.GetNumMacros(), 2, "reused, not duplicated")
+	Eq(g.actions[3], nil, "not placed twice")
+end)
+
+Test("Bar picks a visible action button (the gamepad bar shows other slots)", function()
+	local g, ui, st = Open()
+	local hidden = g.env.CreateFrame("CheckButton", nil, g.env.UIParent)
+	hidden.action = 3
+	hidden.shown = false
+	local taken = g.env.CreateFrame("CheckButton", nil, g.env.UIParent)
+	taken.action = 25
+	g.actions[25] = { "spell", 133 }
+	local free = g.env.CreateFrame("CheckButton", nil, g.env.UIParent)
+	free.action = 97
+	g.env.EnumerateFrames = function(after)
+		local found = after == nil
+		for _, f in ipairs(g.frames) do
+			if found then
+				return f
+			end
+			found = f == after
+		end
+	end
+	g.Slash("bar food")
+	Eq(g.actions[97] and g.actions[97][1], "macro", "the visible free one")
+	Eq(g.actions[3], nil, "not the hidden one")
+end)
+
+Test("full action bars: the ring stays on the cursor to drop yourself", function()
+	local g, ui, st = Open()
+	for slot = 1, 72 do
+		g.actions[slot] = { "spell", 133 }
+	end
+	g.Slash("bar food")
+	Eq(g.cursorInfo[1], "macro", "on the cursor")
 end)
 
 Test("spells show their rank, highest rank first", function()

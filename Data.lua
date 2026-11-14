@@ -215,13 +215,39 @@ ns.autoRings = {
 	},
 }
 
+-- Every ring has its own icon, so empty rings and rings that start with a
+-- sub-ring still show something. Your own rings use their first action.
+local RING_ICONS = {
+	main = "Interface\\Icons\\INV_Jewelry_Ring_03",
+	food = "Interface\\Icons\\INV_Misc_Food_15",
+	bag = "Interface\\Icons\\INV_Misc_Bag_08",
+	quest = "Interface\\Icons\\INV_Misc_Note_02",
+	markers = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8",
+	mount = "Interface\\Icons\\Ability_Mount_RidingHorse",
+	tools = "Interface\\Icons\\Trade_BlackSmithing",
+}
+local DEFAULT_RING_ICON = "Interface\\Icons\\INV_Jewelry_Ring_15"
+
+function ns.RingIcon(key, resolved)
+	if RING_ICONS[key] then
+		return RING_ICONS[key]
+	end
+	local slices = (resolved or ns.resolved or {})[key]
+	for _, slice in ipairs(slices or {}) do
+		if slice.type ~= "ring" and slice.icon then
+			return slice.icon
+		end
+	end
+	return DEFAULT_RING_ICON
+end
+
 function ns.RingLabel(key)
 	local auto = ns.autoRings[key]
 	local custom = ForeverRingsDB.rings[key]
 	return auto and auto.label or custom and custom.label or key
 end
 
-local QUESTION_MARK = 134400
+local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 ns.SETTINGS_ICON = "Interface\\Icons\\INV_Misc_Gear_01"
 
 -- A slot that opens the settings screen, so controller players never need
@@ -242,8 +268,8 @@ local function MacroSlice(name)
 	return { name = name .. " (missing)", icon = QUESTION_MARK }
 end
 
--- Builds the slices of every ring. Sub-ring slots borrow the icon of the
--- first action in the ring they open.
+-- Builds the slices of every ring. Sub-ring slots show the icon of the ring
+-- they open.
 function ns.ResolveAll()
 	local resolved = {}
 	for key, auto in pairs(ns.autoRings) do
@@ -269,9 +295,7 @@ function ns.ResolveAll()
 	for _, slices in pairs(resolved) do
 		for _, slice in ipairs(slices) do
 			if slice.type == "ring" then
-				local target = resolved[slice.value]
-				local first = target and target[1]
-				slice.icon = first and first.type ~= "ring" and first.icon or QUESTION_MARK
+				slice.icon = ns.RingIcon(slice.value, resolved)
 			end
 		end
 	end

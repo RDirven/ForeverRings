@@ -16,7 +16,7 @@ local IDLE_SPEED = 40         -- degrees per second the track light drifts
 local STATE_INTERVAL = 0.2    -- seconds between cooldown/usability checks
 local MEDIA = "Interface\\AddOns\\ForeverRings\\Media\\"
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-local QUESTION_MARK = 134400
+local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 -- The track sits just inside the slots; its texture draws the line at 90% of
 -- its radius. The backdrop is sized from the outer edge of the slots.

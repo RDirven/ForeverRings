@@ -43,6 +43,7 @@ function M.New(world)
 		timers = {},
 		cursor = { 960, 540 },
 		modifiers = {},
+		actions = {},
 		freelook = true,
 		cvars = {},
 		frames = {},
@@ -124,6 +125,10 @@ function M.New(world)
 	function Frame:EnableMouseWheel(on) self.wheel = on end
 	function Frame:RegisterForDrag(...) self.drag = { ... } end
 	function Frame:EnableGamePadStick(on) self.sticks = on end
+	function Frame:LockHighlight() self.highlight = true end
+	function Frame:Enable() self.enabled = true end
+	function Frame:Disable() self.enabled = false end
+	function Frame:UnlockHighlight() self.highlight = false end
 	function Frame:RegisterForClicks(...)
 		self.clicks = {}
 		for _, c in ipairs({ ... }) do
@@ -143,6 +148,7 @@ function M.New(world)
 	function Frame:Hide() Blocked(self, "Hide") self.shown = false end
 	function Frame:SetShown(on) if on then self:Show() else self:Hide() end end
 	function Frame:IsShown() return self.shown end
+	function Frame:IsVisible() return self.shown and (not self.parent or self.parent.IsVisible == nil or self.parent:IsVisible()) end
 	function Frame:SetScale(s) self.scale = s end
 	function Frame:SetAlpha(a) self.alpha = a end
 	function Frame:EnableKeyboard(on) self.keyboard = on end
@@ -259,10 +265,16 @@ function M.New(world)
 		end
 	end
 
-	function game.GamePadButton(button)
+	-- Press and release; down = true or false for just one half.
+	function game.GamePadButton(button, down)
+		if down == nil then
+			game.GamePadButton(button, true)
+			return game.GamePadButton(button, false)
+		end
+		local script = down and "OnGamePadButtonDown" or "OnGamePadButtonUp"
 		for _, f in ipairs(game.frames) do
-			if f.shown and f.gamepad and f.scripts.OnGamePadButtonDown then
-				return f.scripts.OnGamePadButtonDown(f, button)
+			if f.shown and f.gamepad and f.scripts[script] then
+				return f.scripts[script](f, button)
 			end
 		end
 	end
@@ -402,6 +414,17 @@ function M.New(world)
 			return index
 		end,
 		PickupMacro = function(index) game.cursorInfo = { "macro", index } end,
+		HasAction = function(slot) return game.actions[slot] ~= nil end,
+		-- Only when a test asks for it: otherwise the addon falls back to bars 1-6.
+		EnumerateFrames = nil,
+		GetActionInfo = function(slot)
+			local a = game.actions[slot]
+			if a then return a[1], a[2] end
+		end,
+		PlaceAction = function(slot)
+			game.actions[slot] = game.cursorInfo
+			game.cursorInfo = nil
+		end,
 		IsShiftKeyDown = function() return game.modifiers.shift end,
 		IsControlKeyDown = function() return game.modifiers.ctrl end,
 		IsAltKeyDown = function() return game.modifiers.alt end,

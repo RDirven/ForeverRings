@@ -9,19 +9,30 @@ local _, ns = ...
 -- rows, tabs and slots, right-click a slot to clear it, and drag spells, items,
 -- mounts and macros straight onto a slot.
 
-local WIDTH, HEIGHT = 760, 480
+local WIDTH, HEIGHT = 900, 480
 local ROW_HEIGHT, VISIBLE_ROWS = 34, 10
-local LIST_WIDTH = 320
+local LIST_WIDTH = 480
+
+-- Buttons on every ring row, left to right.
+local CELLS = {
+	{ name = "edit", label = "Edit", width = 46, tip = "Edit this ring." },
+	{ name = "bar", label = "Bar", width = 40, tip = "Put this ring on your action bar: press it to open\nthe ring, aim, and let go of the stick." },
+	{ name = "key", label = "Set key", width = 96, tip = "Click: set the button that opens this ring.\nRight-click: remove it." },
+	{ name = "clear", label = "x", width = 24, tip = "Remove this ring's button." },
+	{ name = "plus", label = "+", width = 26, tip = "Add something to this ring." },
+	{ name = "minus", label = "-", width = 26, tip = "Delete this ring (click twice)." },
+}
 local PREVIEW_RADIUS, SLOT_SIZE = 95, 42
 local ACCENT = { 0.35, 0.75, 1 }
 local CIRCLE_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-local QUESTION_MARK = 134400
+local QUESTION_MARK = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local KEYS = {
 	PADDUP = "up", PADLSTICKUP = "up", UP = "up",
 	PADDDOWN = "down", PADLSTICKDOWN = "down", DOWN = "down",
 	PADDLEFT = "left", PADLSTICKLEFT = "left", LEFT = "left",
 	PADDRIGHT = "right", PADLSTICKRIGHT = "right", RIGHT = "right",
+	PADRSTICKUP = "up", PADRSTICKDOWN = "down", PADRSTICKLEFT = "left", PADRSTICKRIGHT = "right",
 	PAD1 = "accept", ENTER = "accept",
 	PAD2 = "back", ESCAPE = "back",
 	PAD3 = "x", DELETE = "x",
@@ -45,8 +56,10 @@ local state = {
 	nameIndex = 1,
 	welcome = false,
 	capture = nil,      -- ring key, or "config" for the settings button
+	pending = nil,      -- gamepad button held while capturing, for combos
 	confirmDelete = nil,
 	message = nil,
+	col = nil,          -- ring list: focused row button (gamepad), index into CELLS
 }
 
 -- Picker sources ----------------------------------------------------------------
@@ -162,9 +175,7 @@ local PICKERS = {
 			local list = { { entry = { settings = true }, name = "Settings (this screen)", icon = ns.SETTINGS_ICON } }
 			for _, key in ipairs(ns.RingKeys()) do
 				if key ~= currentKey then
-					local slices = ns.resolved[key]
-					local first = slices and slices[1]
-					list[#list + 1] = { entry = { ring = key }, name = ns.RingLabel(key), icon = first and first.type ~= "ring" and first.icon or QUESTION_MARK }
+					list[#list + 1] = { entry = { ring = key }, name = ns.RingLabel(key), icon = ns.RingIcon(key) }
 				end
 			end
 			return list
@@ -323,6 +334,40 @@ local function SetHint(text)
 	ui.hint:SetText(state.message and ("|cffffd100" .. state.message .. "|r   " .. text) or text)
 end
 
+local function BindingShort(binding)
+	return binding and (GetBindingText and GetBindingText(binding, true) or binding)
+end
+
+local function SetEnabled(button, on)
+	if on then
+		button:Enable()
+	else
+		button:Disable()
+	end
+end
+
+-- The Edit / key / Bar / + / - buttons of a ring row.
+local function RenderCells(row, key, selected)
+	local show = key ~= nil and state.tab == "rings" and (state.mode == "list" or state.mode == "edit")
+	for c, b in ipairs(row.cells) do
+		b:SetShown(show)
+		if show and selected and state.col == c then
+			b:LockHighlight()
+		else
+			b:UnlockHighlight()
+		end
+	end
+	if not show then
+		return
+	end
+	local cells, binding = row.cells, ns.GetRingBinding(key)
+	cells[3]:SetText(BindingShort(binding) or "Set key")
+	SetEnabled(cells[4], binding ~= nil)
+	SetEnabled(cells[5], ns.IsEditable(key))
+	SetEnabled(cells[6], ns.IsDeletable(key))
+	cells[6]:SetText(state.confirmDelete == key and "|cffff5555?|r" or "-")
+end
+
 local function RenderList(items, selected)
 	local offset = math.max(0, math.min(selected - VISIBLE_ROWS, #items - VISIBLE_ROWS))
 	offset = math.max(offset, 0)
@@ -336,6 +381,7 @@ local function RenderList(items, selected)
 			row.right:SetText(item.right or "")
 			row.bg:SetShown(offset + i == selected)
 			row:Show()
+			RenderCells(row, item.ring, offset + i == selected)
 		else
 			row:Hide()
 		end
@@ -418,8 +464,8 @@ local function RenderRings()
 		local auto = ns.autoRings[ringKey] ~= nil
 		items[i] = {
 			text = ns.RingLabel(ringKey) .. (auto and " |cff888888(auto)|r" or ""),
-			icon = (ns.resolved[ringKey] and ns.resolved[ringKey][1] and ns.resolved[ringKey][1].icon) or QUESTION_MARK,
-			right = BindingText(ns.GetRingBinding(ringKey)),
+			icon = ns.RingIcon(ringKey),
+			ring = ringKey,
 		}
 	end
 	items[#items + 1] = { text = "|cff59bfff+ New ring|r", icon = false }
@@ -465,9 +511,12 @@ local function RenderRings()
 	end
 	ui.info:SetText(state.welcome and WELCOME or table.concat(lines, "\n"))
 	if state.confirmDelete == key then
-		return SetHint("|cffff5555Press X again to delete " .. ns.RingLabel(key) .. "|r   B cancel")
+		return SetHint("|cffff5555Press - (or X) again to delete " .. ns.RingLabel(key) .. "|r   B cancel")
 	end
-	SetHint("A " .. (ns.IsEditable(key) and "edit" or "view") .. "   Y set button" .. (ns.IsDeletable(key) and "   X delete" or "") .. "   B close")
+	if state.col then
+		return SetHint("Left/Right choose   A press" .. (CELLS[state.col].name == "key" and "   X remove key" or "") .. "   B back")
+	end
+	SetHint("A " .. (ns.IsEditable(key) and "edit" or "view") .. "   Y set key" .. (ns.IsDeletable(key) and "   X delete" or "") .. "   Right row buttons   B close")
 end
 
 local function RenderSettings()
@@ -483,17 +532,17 @@ local function RenderSettings()
 	SetHint(SETTINGS[state.settingIndex].accept and "A change   B close" or "D-pad left/right change   B close")
 end
 
--- Mouse buttons along the bottom right, for what the gamepad does with X/Y.
-local function RenderButtons()
-	local x = -20
-	for _, b in ipairs(ui.buttons) do
-		local show = not state.capture and b.visible()
-		b:SetShown(show)
-		if show then
-			b:ClearAllPoints()
-			b:SetPoint("BOTTOMRIGHT", x, 44)
-			x = x - b:GetWidth() - 6
-		end
+-- Small buttons above the list while editing a ring: Back, Rename, + and -.
+local function RenderToolbar()
+	local key = CurrentRingKey()
+	local rings = not state.capture and state.tab == "rings" and key ~= nil
+	local editing = rings and state.mode == "edit" and ns.IsEditable(key)
+	ui.back:SetShown(rings and state.mode ~= "list")
+	ui.rename:SetShown(editing and key ~= "main")
+	ui.plus:SetShown(editing)
+	ui.minus:SetShown(editing)
+	if state.tab ~= "rings" or state.mode ~= "list" then
+		state.col = nil
 	end
 end
 
@@ -503,10 +552,10 @@ Render = function()
 	end
 	RenderTabs()
 	if state.capture then
-		RenderButtons()
+		RenderToolbar()
 		local target = state.capture == "config" and "the settings screen" or ns.RingLabel(state.capture)
 		ui.capture:SetText("Press the button for " .. target .. "\n\n|cff888888" .. ns.ButtonTip()
-			.. "\nCombos work with a modifier held (Shift/Ctrl/Alt, or a pad\nbutton set as one), e.g. Shift + B. Keys and side mouse\nbuttons work too. B, Esc or right-click cancels.|r")
+			.. "\nFor a combo, hold the first button and press the second\n(e.g. L2 + Triangle). Keys and side mouse buttons work too.\nB, Esc or right-click cancels.|r")
 		ui.capture:Show()
 		SetHint("")
 		return
@@ -517,7 +566,7 @@ Render = function()
 	else
 		RenderSettings()
 	end
-	RenderButtons()
+	RenderToolbar()
 end
 
 -- Input -------------------------------------------------------------------------
@@ -542,10 +591,13 @@ local function Close()
 	state.capture = nil
 	state.confirmDelete = nil
 	state.welcome = false
+	state.col = nil
 	ui.frame:EnableKeyboard(false)
 	ui.frame:EnableGamePadButton(false)
+	ns.configOpen = false
 	if not InCombatLockdown() then
 		ClearOverrideBindings(ui.frame)
+		ns.ApplyRingBindings()
 	end
 	ui.frame:Hide()
 end
@@ -558,6 +610,7 @@ local function Move(current, step, count)
 end
 
 local actions = {}
+local NextCell, RowAction
 
 function actions.rings(action)
 	local key = CurrentRingKey()
@@ -618,6 +671,17 @@ function actions.rings(action)
 	if action ~= "x" then
 		state.confirmDelete = nil
 	end
+	if key and (action == "right" or (action == "left" and state.col)) then
+		state.col = NextCell(key, state.col or 0, action == "right" and 1 or -1)
+		return
+	elseif key and state.col and action == "accept" then
+		return RowAction(key, CELLS[state.col].name, "LeftButton")
+	elseif key and state.col and action == "x" and CELLS[state.col].name == "key" then
+		return RowAction(key, "key", "RightButton")
+	elseif state.col and action == "back" then
+		state.col = nil
+		return
+	end
 	if action == "up" or action == "down" then
 		state.ringIndex = Move(state.ringIndex, action == "up" and -1 or 1, count)
 	elseif action == "prevTab" or action == "nextTab" then
@@ -671,6 +735,24 @@ function actions.settings(action)
 	elseif action == "back" then
 		Close()
 	end
+end
+
+-- Next usable row button from `col` in direction `step`; nil when moving left
+-- off the first one.
+NextCell = function(key, col, step)
+	local c = col + step
+	while c >= 1 and c <= #CELLS do
+		local name = CELLS[c].name
+		if (name ~= "plus" or ns.IsEditable(key)) and (name ~= "minus" or ns.IsDeletable(key))
+			and (name ~= "clear" or ns.GetRingBinding(key)) then
+			return c
+		end
+		c = c + step
+	end
+	if c < 1 then
+		return nil
+	end
+	return col > 0 and col or nil
 end
 
 local function HandleKey(key)
@@ -765,16 +847,81 @@ SlotClicked = function(index, button)
 	Render()
 end
 
-local function PutOnActionBar()
+-- Editor toolbar +: add a slot (opens the picker).
+local function Plus()
 	local key = CurrentRingKey()
-	local macro, err = ns.PickupRingMacro(key)
-	if not macro then
-		Say(err)
+	if state.capture or state.mode ~= "edit" or not (key and ns.IsEditable(key)) then
+		return
+	end
+	local slots = ForeverRingsDB.rings[key].slots
+	if #slots >= ns.MAX_SLICES then
+		Say("That ring is full (" .. ns.MAX_SLICES .. " slots). Use a sub-ring for more.")
 		return Render()
 	end
-	Close()
-	ns.Print("Drop '" .. macro .. "' on your action bar. Click it to open " .. ns.RingLabel(key)
-		.. ", aim with the mouse or stick, then left-click (or click the button again) to use it.")
+	state.slot = #slots + 1
+	HandleKey("PAD1")
+end
+
+-- Editor toolbar -: clear the selected slot.
+local function Minus()
+	if not state.capture and state.mode == "edit" then
+		HandleKey("PAD3")
+	end
+end
+
+local function PutOnActionBar(key)
+	local message, err = ns.PlaceRingOnBar(key)
+	Say(message or err)
+	if message and GetCursorInfo() then
+		-- No free slot: the macro is on the cursor, so get out of the way.
+		Close()
+		return ns.Print(message)
+	end
+	Render()
+end
+
+-- A ring row's button: edit, key (right-click removes it), bar, + or -.
+RowAction = function(key, name, button)
+	state.message = nil
+	if name ~= "minus" then
+		state.confirmDelete = nil
+	end
+	if name == "edit" then
+		state.mode, state.slot, state.col = "edit", 1, nil
+	elseif name == "key" or name == "clear" then
+		state.mode = "list"
+		if button == "RightButton" or name == "clear" then
+			if ns.GetRingBinding(key) and Try(ns.BindRing(key, nil)) then
+				Say(ns.RingLabel(key) .. " has no button now.")
+			end
+		else
+			StartCapture(key)
+		end
+	elseif name == "bar" then
+		return PutOnActionBar(key)
+	elseif name == "plus" then
+		if not ns.IsEditable(key) then
+			Say(ns.RingLabel(key) .. " fills itself.")
+		elseif #ForeverRingsDB.rings[key].slots >= ns.MAX_SLICES then
+			Say("That ring is full (" .. ns.MAX_SLICES .. " slots). Use a sub-ring for more.")
+		else
+			state.mode, state.slot, state.pickIndex, state.col = "pick", #ForeverRingsDB.rings[key].slots + 1, 1, nil
+		end
+	elseif name == "minus" then
+		state.mode = "list"
+		if not ns.IsDeletable(key) then
+			Say(ns.RingLabel(key) .. " can't be deleted.")
+		elseif state.confirmDelete == key then
+			local label = ns.RingLabel(key)
+			state.confirmDelete, state.col = nil, nil
+			if Try(ns.DeleteRing(key)) then
+				Say("Deleted " .. label .. ".")
+			end
+		else
+			state.confirmDelete = key
+		end
+	end
+	Render()
 end
 
 -- Gamepad buttons the client turns into Shift/Ctrl/Alt
@@ -788,11 +935,27 @@ local function IsEmulatedModifier(button)
 end
 
 -- "SHIFT-PAD2" when a modifier is held, in WoW's ALT-CTRL-SHIFT order.
-local function WithModifiers(key)
-	local prefix = (IsAltKeyDown and IsAltKeyDown() and "ALT-" or "")
-		.. (IsControlKeyDown and IsControlKeyDown() and "CTRL-" or "")
-		.. (IsShiftKeyDown and IsShiftKeyDown() and "SHIFT-" or "")
-	return prefix .. key
+-- `extra` adds one more ("ALT", "CTRL" or "SHIFT").
+local function WithModifiers(key, extra)
+	local alt = extra == "ALT" or (IsAltKeyDown and IsAltKeyDown())
+	local ctrl = extra == "CTRL" or (IsControlKeyDown and IsControlKeyDown())
+	local shift = extra == "SHIFT" or (IsShiftKeyDown and IsShiftKeyDown())
+	return (alt and "ALT-" or "") .. (ctrl and "CTRL-" or "") .. (shift and "SHIFT-" or "") .. key
+end
+
+-- WoW only knows Shift, Ctrl and Alt as modifiers. To bind L2 + Triangle,
+-- L2 has to become one: the first of Alt, Shift, Ctrl that's still free.
+-- (A quick tap of it still does what it did before.)
+local MODIFIER_CVARS = { ALT = "GamePadEmulateAlt", SHIFT = "GamePadEmulateShift", CTRL = "GamePadEmulateCtrl" }
+
+local function MakeModifier(button)
+	for _, mod in ipairs({ "ALT", "SHIFT", "CTRL" }) do
+		local value = GetCVar and GetCVar(MODIFIER_CVARS[mod])
+		if value == nil or value == "" or value:upper() == "NONE" then
+			SetCVar(MODIFIER_CVARS[mod], button)
+			return mod
+		end
+	end
 end
 
 local function FinishCapture(key)
@@ -825,6 +988,7 @@ end
 -- While capturing, our own override bindings are off so every key reaches us.
 StartCapture = function(target)
 	state.capture = target
+	state.pending = nil
 	ClearOverrideBindings(ui.frame)
 	ui.frame:EnableKeyboard(true)
 	ui.frame:SetPropagateKeyboardInput(false)
@@ -841,7 +1005,7 @@ end
 -- Frame -------------------------------------------------------------------------
 
 local function Build()
-	ui = { rows = {}, slots = {}, ringKeys = {}, pickItems = {}, buttons = {} }
+	ui = { rows = {}, slots = {}, ringKeys = {}, pickItems = {} }
 	ns.configUI, ns.configState = ui, state -- for tests
 
 	local frame = CreateFrame("Frame", "ForeverRingsConfig", UIParent)
@@ -879,7 +1043,7 @@ local function Build()
 		hit:SetPoint("BOTTOMRIGHT", tab[1], "BOTTOMRIGHT", 8, -6)
 		hit:SetScript("OnClick", function()
 			if not state.capture then
-				state.tab, state.mode, state.message, state.confirmDelete = tab[2], "list", nil, nil
+				state.tab, state.mode, state.message, state.confirmDelete, state.col = tab[2], "list", nil, nil, nil
 				Render()
 			end
 		end)
@@ -903,12 +1067,26 @@ local function Build()
 	ui.listTitle:SetPoint("TOPLEFT", 20, -62)
 	ui.listTitle:SetJustifyH("LEFT")
 
+	local function SmallButton(label, width, right, onClick)
+		local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+		b:SetSize(width, 22)
+		b:SetText(label)
+		b:SetPoint("TOPRIGHT", frame, "TOPLEFT", 20 + LIST_WIDTH - right, -56)
+		b:SetScript("OnClick", onClick)
+		return b
+	end
+	ui.minus = SmallButton("-", 26, 0, Minus)
+	ui.plus = SmallButton("+", 26, 30, Plus)
+	ui.rename = SmallButton("Rename", 70, 60, function() HandleKey("PAD4") end)
+	ui.back = SmallButton("Back", 56, 134, function() HandleKey("ESCAPE") end)
+
 	local list = CreateFrame("Frame", nil, frame)
 	list:SetSize(LIST_WIDTH, VISIBLE_ROWS * ROW_HEIGHT)
 	list:SetPoint("TOPLEFT", 20, -84)
 	for i = 1, VISIBLE_ROWS do
 		local row = CreateRow(list, i)
 		local function Select()
+			state.col = nil
 			local index = ui.listOffset + i
 			if state.tab == "settings" then
 				state.settingIndex = index
@@ -942,7 +1120,7 @@ local function Build()
 			if not state.capture and state.tab == "rings" and state.mode == "list" then
 				Select()
 				if CurrentRingKey() then
-					PutOnActionBar()
+					PutOnActionBar(CurrentRingKey())
 				end
 			end
 		end)
@@ -952,6 +1130,39 @@ local function Build()
 				DropOnRing(CurrentRingKey())
 			end
 		end)
+		row.cells = {}
+		local x = -4
+		for c = #CELLS, 1, -1 do
+			local cell = CELLS[c]
+			local b = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+			b:SetSize(cell.width, ROW_HEIGHT - 10)
+			b:SetPoint("RIGHT", x, 0)
+			b:SetText(cell.label)
+			b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+			b:SetScript("OnClick", function(_, button)
+				local index = ui.listOffset + i
+				local key = ui.ringKeys[index]
+				if state.capture or not key then
+					return
+				end
+				state.ringIndex, state.col = index, nil
+				RowAction(key, cell.name, button)
+			end)
+			b:SetScript("OnEnter", function(self)
+				if GameTooltip then
+					GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+					GameTooltip:SetText(cell.tip, 1, 1, 1, 1, true)
+					GameTooltip:Show()
+				end
+			end)
+			b:SetScript("OnLeave", function()
+				if GameTooltip then
+					GameTooltip:Hide()
+				end
+			end)
+			row.cells[c] = b
+			x = x - cell.width - 3
+		end
 		ui.rows[i] = row
 	end
 	ui.list = list
@@ -987,28 +1198,6 @@ local function Build()
 	ui.capture:SetPoint("CENTER")
 	ui.capture:Hide()
 
-	-- Listed right to left.
-	ui.buttons = {}
-	local function AddButton(label, width, visible, onClick)
-		local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-		b:SetSize(width, 26)
-		b:SetText(label)
-		b:SetScript("OnClick", onClick)
-		b.visible = visible
-		ui.buttons[#ui.buttons + 1] = b
-	end
-	local function InList()
-		return state.tab == "rings" and state.mode == "list" and CurrentRingKey() ~= nil
-	end
-	AddButton("Back", 80, function() return state.tab == "rings" and state.mode ~= "list" end, function() HandleKey("ESCAPE") end)
-	AddButton("Rename", 90, function()
-		local key = CurrentRingKey()
-		return state.tab == "rings" and state.mode == "edit" and key ~= "main" and ns.IsEditable(key)
-	end, function() HandleKey("PAD4") end)
-	AddButton("Put on action bar", 150, InList, PutOnActionBar)
-	AddButton("Set key", 90, InList, function() HandleKey("PAD4") end)
-	AddButton("Edit", 70, InList, function() HandleKey("PAD1") end)
-
 	-- Middle and side mouse buttons can open rings too; right click cancels.
 	local MOUSE_KEYS = { MiddleButton = "BUTTON3", Button4 = "BUTTON4", Button5 = "BUTTON5", RightButton = "ESCAPE" }
 	frame:SetScript("OnMouseDown", function(_, button)
@@ -1027,8 +1216,32 @@ local function Build()
 			FinishCapture(WithModifiers(key))
 		end
 	end)
+	-- Gamepad: a button counts when it's let go, so a second button pressed
+	-- while the first is held makes a combo (L2 + Triangle).
 	frame:SetScript("OnGamePadButtonDown", function(_, button)
-		if state.capture and not IsEmulatedModifier(button) then
+		if not state.capture or IsEmulatedModifier(button) then
+			return
+		end
+		local first = state.pending
+		if not first then
+			state.pending = button
+			return
+		end
+		state.pending = nil
+		local mod = MakeModifier(first)
+		if not mod then
+			Say("Shift, Ctrl and Alt are all in use. Hold one of them instead.")
+			return Render()
+		end
+		Say((GetBindingText and GetBindingText(first) or first) .. " now works as " .. mod:sub(1, 1) .. mod:sub(2):lower() .. ".")
+		local message = state.message
+		FinishCapture(WithModifiers(button, mod))
+		state.message = message .. "  " .. (state.message or "")
+		Render()
+	end)
+	frame:SetScript("OnGamePadButtonUp", function(_, button)
+		if state.capture and state.pending == button then
+			state.pending = nil
 			FinishCapture(WithModifiers(button))
 		end
 	end)
@@ -1096,10 +1309,24 @@ function ns.ToggleConfig()
 	if not ui then
 		Build()
 	end
-	state.mode, state.message, state.capture = "list", nil, nil
+	state.mode, state.message, state.capture, state.col = "list", nil, nil, nil
 	ui.frame:Show()
+	ns.configOpen = true
+	ns.ApplyRingBindings()
 	ApplyBindings()
 	Render()
+	-- Right after the first open something can still take the screen's
+	-- buttons back. Check a moment later and reclaim them.
+	C_Timer.After(0.2, function()
+		if not (ui.frame:IsShown() and not state.capture and GetBindingAction) then
+			return
+		end
+		local action = GetBindingAction("PADDDOWN", true)
+		if action ~= "CLICK ForeverRingsConfigInput:PADDDOWN" then
+			ApplyBindings()
+			ns.Print("Took the menu buttons back from: " .. tostring(action ~= "" and action or "nothing"))
+		end
+	end)
 end
 
 -- First login: open on the Main ring with a short how-to.
