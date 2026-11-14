@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 - **Rings live on your action bar now, not on hidden buttons.** Every ring row has **Edit**, **Set key**, **Clear**, **+** and **-**. *Set key* asks you to press the action bar button where the ring should go (L2/R2 combos included) and puts it there; *Clear* takes it off your bars. `/frings bar <ring>` puts it in the first free visible slot.
 - Ring buttons set in older versions are removed once, so the game's own gamepad bindings work again. (If a button still does nothing, restore Blizzard's default gamepad bindings in the Key Bindings menu.)
