@@ -71,8 +71,19 @@ function ns.Print(msg)
 end
 local Print = ns.Print
 
+local secureButtons = {}
+
+-- What a ring button clicks for each menu: "clickbutton-menu:<id>" = the
+-- micro menu button. Out of combat only.
+local function SetMenuClicks(button)
+	for _, menu in ipairs(ns.MENUS) do
+		button:SetAttribute("clickbutton-menu:" .. menu.id, ns.MenuButton(menu))
+	end
+end
+
 local function SecureButton(name, snippet, clicks, parent)
 	local button = CreateFrame("Button", name, parent or UIParent, "SecureActionButtonTemplate")
+	secureButtons[#secureButtons + 1] = button
 	button:SetSize(1, 1)
 	button:SetPoint("TOPLEFT")
 	button:RegisterForClicks(unpack(clicks))
@@ -183,12 +194,11 @@ local function RefreshAll()
 	end
 	refreshPending = false
 	ns.resolved = ns.ResolveAll()
-	-- Secure clicks on micro menu buttons need a reference to the button.
-	for _, menu in ipairs(ns.MENUS) do
-		local button = ns.MenuButton(menu)
-		if button then
-			SecureHandlerSetFrameRef(header, "menu:" .. menu.id, button)
-		end
+	for key in pairs(ns.resolved) do
+		EnsureTrigger(key)
+	end
+	for _, button in ipairs(secureButtons) do
+		SetMenuClicks(button)
 	end
 	for key, slices in pairs(ns.resolved) do
 		EnsureTrigger(key)

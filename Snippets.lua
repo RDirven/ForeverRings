@@ -70,20 +70,24 @@ local CLOSE = [[
 -- No macros for the addon's own actions: a macro can't start another macro,
 -- so they'd do nothing from an action bar button. And Blizzard panels and
 -- raid marks must be done by secure code, or the client blames the addon.
---   click       clicks a game button (micro menu), value = frame ref name
+--   click       clicks a game button (micro menu), value = "menu:<id>"
 --   raidtarget  sets (toggles) or clears a raid mark on the target
---   run         the addon's own things (its settings screen), insecure
+--   run         the addon's own things (its settings screen, bags...), insecure
 local FIRE = [[
 	self:SetAttribute("unit", nil)
 	if kind == "run" then
-		self:SetAttribute("type", nil)
-		self:SetAttribute("typerelease", nil)
+		-- Cancel the click itself: newer clients error on a secure click that
+		-- has nothing to do.
 		owner:SetAttribute("run", nil)
 		owner:SetAttribute("run", value)
+		return false
 	elseif kind == "click" then
+		-- Secure code can't hand over a button, only its name: every ring
+		-- button has "clickbutton-<value>" set to the micro menu button, and
+		-- returning value as the mouse button makes the click use that one.
 		self:SetAttribute("type", "click")
 		self:SetAttribute("typerelease", "click")
-		self:SetAttribute("clickbutton", owner:GetFrameRef(value))
+		return value
 	elseif kind == "raidtarget" then
 		self:SetAttribute("type", "raidtarget")
 		self:SetAttribute("typerelease", "raidtarget")

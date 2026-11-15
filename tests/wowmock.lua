@@ -127,7 +127,13 @@ function M.New(world)
 	function Frame:EnableMouseWheel(on) self.wheel = on end
 	function Frame:RegisterForDrag(...) self.drag = { ... } end
 	function Frame:EnableGamePadStick(on) self.sticks = on end
-	function Frame:Click() self.clicked = (self.clicked or 0) + 1 end
+	-- A secure button of type "click" passes the click on, like the real one.
+	function Frame:Click()
+		self.clicked = (self.clicked or 0) + 1
+		if self.attrs.type == "click" and self.attrs.clickbutton then
+			self.attrs.clickbutton:Click()
+		end
+	end
 	function Frame:GetFrameRef(name) return self.refs and self.refs[name] end
 	function Frame:LockHighlight() self.highlight = true end
 	function Frame:Enable() self.enabled = true end
@@ -233,13 +239,19 @@ function M.New(world)
 		end
 		if result ~= false then
 			local kind = frame.attrs.type
+			if kind == "attribute" and not frame.attrs["attribute-name"] then
+				kind = nil -- no-op
+			end
+			-- Like WoW Forever: a secure click that goes through without a type errors.
+			assert(not wrap or frame.attrs.type ~= nil,
+				"SecureTemplates.lua:561: attempt to call a nil value (" .. tostring(frame.name) .. " clicked without a type)")
 			if kind then
 				local value = frame.attrs[kind == "macro" and "macrotext" or kind]
 				if kind == "raidtarget" then
 					value = frame.attrs.marker
 					game.marks[frame.attrs.unit] = frame.attrs.action ~= "clear" and value or nil
 				elseif kind == "click" then
-					value = frame.attrs.clickbutton
+					value = type(result) == "string" and frame.attrs["clickbutton-" .. result] or frame.attrs.clickbutton
 					value:Click()
 				end
 				table.insert(game.casts, { type = kind, value = value })

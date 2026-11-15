@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: menus with a micro menu button (Character, Spellbook, Talents, Quest log, Group finder...) didn't open from a ring. They're now a secure click on that button.
+- Fixed: "SecureTemplates.lua:561: attempt to call a nil value" when picking Settings, Bags, Map, Social or Calendar from a ring (mouse or action bar).
+
 ## 0.5.3
 
 - **Menu ring**: the game panels in one ring: Character, Bags, Spellbook, Talents, Quest log, Map, Social, Group finder (what your client has). It's in Main by default.
