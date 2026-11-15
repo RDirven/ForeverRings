@@ -9,7 +9,10 @@ local _, ns = ...
 -- rows, tabs and slots, right-click a slot to clear it, and drag spells, items,
 -- mounts and macros straight onto a slot.
 
-local WIDTH, HEIGHT = 900, 480
+local WIDTH, HEIGHT = 900, 540
+-- Rows of the left column: the title row (where you are + its buttons), the
+-- picker's category row, then the list.
+local TITLE_Y, CATEGORY_Y, LIST_Y, LIST_Y_PICK = -58, -96, -100, -130
 local ROW_HEIGHT, VISIBLE_ROWS = 34, 10
 local LIST_WIDTH = 480
 
@@ -169,6 +172,16 @@ local PICKERS = {
 		end,
 	},
 	{
+		label = "Menus",
+		build = function()
+			local list = {}
+			for _, slice in ipairs(ns.AvailableMenus()) do
+				list[#list + 1] = { entry = { menu = slice.menu }, name = slice.name, icon = slice.icon }
+			end
+			return list
+		end,
+	},
+	{
 		label = "Rings",
 		build = function(currentKey)
 			local list = { { entry = { settings = true }, name = "Settings (this screen)", icon = ns.SETTINGS_ICON } }
@@ -255,7 +268,13 @@ local SETTINGS = {
 		label = "Settings button",
 		value = function() return BindingText(GetBindingKey("FOREVERRINGS_CONFIG")) end,
 		help = "Press A, then the button that should open this screen.\nOr type /frings.",
-		accept = function() state.capture = "config" end,
+		accept = "capture",
+	},
+	{
+		label = "Main ring",
+		value = function() return state.confirmReset and "|cffff5555Press again|r" or "Reset" end,
+		help = "Puts Main back to its default slots: Food, Mounts,\nBag, Quest, Markers, Tools, Menu and Settings.",
+		accept = "reset",
 	},
 }
 
@@ -343,7 +362,7 @@ end
 
 -- The Edit / key / Bar / + / - buttons of a ring row.
 local function RenderCells(row, key, selected)
-	local show = key ~= nil and state.tab == "rings" and (state.mode == "list" or state.mode == "edit")
+	local show = key ~= nil and state.tab == "rings" and state.mode == "list"
 	for c, b in ipairs(row.cells) do
 		b:SetShown(show)
 		if show and selected and state.col == c then
@@ -442,15 +461,52 @@ local function RenderRings()
 		for i, item in ipairs(ui.pickItems) do
 			items[i] = { text = item.name, icon = item.icon }
 		end
-		local labels = {}
-		for i, p in ipairs(PICKERS) do
-			labels[i] = i == state.pickCategory and ("|cffffffff" .. p.label .. "|r") or ("|cff888888" .. p.label .. "|r")
+		ui.listTitle:SetText(ns.RingLabel(key) .. "  |cff888888>  slot " .. state.slot .. "|r")
+		for i, b in ipairs(ui.categories) do
+			local on = i == state.pickCategory
+			b.label:SetTextColor(on and 1 or 0.55, on and 1 or 0.55, on and 1 or 0.55)
+			b.line:SetShown(on)
 		end
-		ui.listTitle:SetText(table.concat(labels, "   "))
 		RenderList(items, state.pickIndex)
 		RenderPreview(key, state.slot)
 		ui.info:SetText("Choose what goes in slot " .. state.slot .. ".")
 		return SetHint("LB/RB category   A choose   B back")
+	end
+
+	if key and state.mode == "name" then
+		local items = {}
+		for i, name in ipairs(NAMES) do
+			items[i] = { text = name, icon = false }
+		end
+		ui.listTitle:SetText("Rename " .. ns.RingLabel(key))
+		RenderList(items, state.nameIndex)
+		RenderPreview(key)
+		ui.info:SetText("Pick a name. To type your own, use\n/frings new <name> on a keyboard.")
+		return SetHint("A choose   B back")
+	end
+
+	-- The editor lists the ring's own slots.
+	if key and state.mode == "edit" then
+		local slices = PreviewSlices(key)
+		state.slot = math.max(1, math.min(state.slot, #slices))
+		local items = {}
+		for i, slice in ipairs(slices) do
+			items[i] = slice.add and { text = "|cff59bfff+ Add|r", icon = false }
+				or { text = slice.name or "?", icon = slice.icon }
+		end
+		ui.listTitle:SetText(ns.RingLabel(key))
+		RenderList(items, state.slot)
+		RenderPreview(key, state.slot)
+		if ns.IsEditable(key) then
+			if state.confirmClear == state.slot then
+				ui.info:SetText("")
+				return SetHint("|cffff5555Press X (or right-click) again to clear this slot|r   B cancel")
+			end
+			ui.info:SetText(("Slot %d of %d.  Each ring holds up to %d.\n|cff888888Drag a spell, item, mount or macro onto a slot.\nRight-click a slot to clear it.|r"):format(state.slot, #slices, ns.MAX_SLICES))
+			return SetHint("Up/Down slot   A choose   X clear" .. (key ~= "main" and "   Y rename" or "") .. "   B back")
+		end
+		ui.info:SetText("This ring fills itself from your bags and collection.")
+		return SetHint("Up/Down look around   B back")
 	end
 
 	local items = {}
@@ -469,32 +525,10 @@ local function RenderRings()
 	if not key then
 		RenderPreview("main")
 		ui.preview:SetAlpha(0.3)
-		ui.info:SetText("Create a new ring. Put it in your Main ring\nor give it its own button.")
+		ui.info:SetText("Create a new ring. Put it in your Main ring\nor on your action bar.")
 		return SetHint("A create   B close")
 	end
 	ui.preview:SetAlpha(1)
-
-	if state.mode == "name" then
-		local items = {}
-		for i, name in ipairs(NAMES) do
-			items[i] = { text = name, icon = false }
-		end
-		ui.listTitle:SetText("Name for " .. ns.RingLabel(key))
-		RenderList(items, state.nameIndex)
-		RenderPreview(key)
-		ui.info:SetText("Pick a name. To type your own, use\n/frings new <name> on a keyboard.")
-		return SetHint("A choose   B back")
-	end
-
-	if state.mode == "edit" then
-		local slices = RenderPreview(key, state.slot)
-		if ns.IsEditable(key) then
-			ui.info:SetText(("Slot %d of %d.  Each ring holds up to %d.\n|cff888888Mouse: drag a spell, item, mount or macro\nonto a slot. Right-click clears.|r"):format(state.slot, #slices, ns.MAX_SLICES))
-			return SetHint("D-pad slot   A choose   X clear" .. (key ~= "main" and "   Y rename" or "") .. "   B back")
-		end
-		ui.info:SetText("This ring fills itself from your bags and collection.")
-		return SetHint("D-pad look around   B back")
-	end
 
 	RenderPreview(key)
 	local slot = ns.RingOnBar(key)
@@ -532,12 +566,21 @@ local function RenderToolbar()
 	local key = CurrentRingKey()
 	local rings = not state.capture and state.tab == "rings" and key ~= nil
 	local editing = rings and state.mode == "edit" and ns.IsEditable(key)
+	local picking = rings and state.mode == "pick"
 	ui.back:SetShown(rings and state.mode ~= "list")
+	for _, b in ipairs(ui.categories) do
+		b:SetShown(picking)
+	end
+	ui.list:ClearAllPoints()
+	ui.list:SetPoint("TOPLEFT", 20, picking and LIST_Y_PICK or LIST_Y)
 	ui.rename:SetShown(editing and key ~= "main")
 	ui.plus:SetShown(editing)
 	ui.minus:SetShown(editing)
 	if state.tab ~= "rings" or state.mode ~= "list" then
 		state.col = nil
+	end
+	if state.mode ~= "edit" then
+		state.confirmClear = nil
 	end
 end
 
@@ -645,6 +688,9 @@ function actions.rings(action)
 	end
 
 	if mode == "edit" then
+		if action ~= "x" then
+			state.confirmClear = nil
+		end
 		local count = #PreviewSlices(key)
 		if action == "left" or action == "up" then
 			state.slot = Move(state.slot, -1, count)
@@ -655,6 +701,11 @@ function actions.rings(action)
 		elseif action == "y" and ns.IsEditable(key) and key ~= "main" then
 			state.mode, state.nameIndex = "name", 1
 		elseif action == "x" and ns.IsEditable(key) and ForeverRingsDB.rings[key].slots[state.slot] then
+			if state.confirmClear ~= state.slot then
+				state.confirmClear = state.slot
+				return
+			end
+			state.confirmClear = nil
 			if Try(ns.RemoveSlot(key, state.slot)) then
 				state.slot = math.max(1, math.min(state.slot, #ForeverRingsDB.rings[key].slots))
 			end
@@ -723,14 +774,25 @@ function actions.settings(action)
 	elseif (action == "left" or action == "right") and setting.change then
 		Try(setting.change(action == "left" and -1 or 1))
 	elseif action == "accept" then
-		if setting.accept then
+		if setting.accept == "capture" then
 			StartCapture("config")
+		elseif setting.accept == "reset" then
+			if state.confirmReset then
+				state.confirmReset = nil
+				if Try(ns.ResetMain()) then
+					Say("Main is back to its default slots.")
+				end
+			else
+				state.confirmReset = true
+			end
+			return
 		elseif setting.change then
 			Try(setting.change(1))
 		end
 	elseif action == "back" then
 		Close()
 	end
+	state.confirmReset = nil
 end
 
 -- Next usable row button from `col` in direction `step`; nil when moving left
@@ -1078,18 +1140,46 @@ local function Build()
 	closeText:SetText("×")
 	close:SetScript("OnClick", Close)
 
-	ui.listTitle = Text(frame, "GameFontNormal")
-	ui.listTitle:SetPoint("TOPLEFT", 20, -62)
+	-- Title row: where you are on the left, its buttons on the right.
+	ui.listTitle = Text(frame, "GameFontNormalLarge")
+	ui.listTitle:SetPoint("TOPLEFT", 22, TITLE_Y - 6)
 	ui.listTitle:SetJustifyH("LEFT")
 
 	local function SmallButton(label, width, right, onClick)
 		local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
 		b:SetSize(width, 22)
 		b:SetText(label)
-		b:SetPoint("TOPRIGHT", frame, "TOPLEFT", 20 + LIST_WIDTH - right, -56)
+		b:SetPoint("TOPRIGHT", frame, "TOPLEFT", 20 + LIST_WIDTH - right, TITLE_Y)
 		b:SetScript("OnClick", onClick)
 		return b
 	end
+	-- Picker categories, clickable (LB/RB on a gamepad).
+	ui.categories = {}
+	for i, picker in ipairs(PICKERS) do
+		local b = CreateFrame("Button", nil, frame)
+		b.label = Text(b, "GameFontHighlight")
+		b.label:SetPoint("CENTER")
+		b.label:SetText(picker.label)
+		b:SetSize(b.label:GetStringWidth() + 16, 24)
+		b.line = Fill(b, "ARTWORK", ACCENT[1], ACCENT[2], ACCENT[3], 1)
+		b.line:SetPoint("BOTTOMLEFT", 4, 0)
+		b.line:SetPoint("BOTTOMRIGHT", -4, 0)
+		b.line:SetHeight(2)
+		if i == 1 then
+			b:SetPoint("TOPLEFT", 14, CATEGORY_Y)
+		else
+			b:SetPoint("LEFT", ui.categories[i - 1], "RIGHT", 4, 0)
+		end
+		b:SetScript("OnClick", function()
+			if not state.capture and state.mode == "pick" then
+				state.pickCategory, state.pickIndex, state.message = i, 1, nil
+				Render()
+			end
+		end)
+		b:Hide()
+		ui.categories[i] = b
+	end
+
 	ui.minus = SmallButton("-", 26, 0, Minus)
 	ui.plus = SmallButton("+", 26, 30, Plus)
 	ui.rename = SmallButton("Rename", 70, 60, function() HandleKey("PAD4") end)
@@ -1097,7 +1187,7 @@ local function Build()
 
 	local list = CreateFrame("Frame", nil, frame)
 	list:SetSize(LIST_WIDTH, VISIBLE_ROWS * ROW_HEIGHT)
-	list:SetPoint("TOPLEFT", 20, -84)
+	list:SetPoint("TOPLEFT", 20, LIST_Y)
 	for i = 1, VISIBLE_ROWS do
 		local row = CreateRow(list, i)
 		local function Select()
@@ -1107,6 +1197,8 @@ local function Build()
 				state.settingIndex = index
 			elseif state.mode == "pick" then
 				state.pickIndex = index
+			elseif state.mode == "edit" then
+				state.slot = index
 			elseif state.mode == "list" then
 				state.ringIndex = index
 			end
@@ -1122,10 +1214,16 @@ local function Build()
 				return
 			end
 			Select()
-			if state.tab == "rings" and state.mode == "list" and GetCursorInfo() then
-				DropOnRing(CurrentRingKey())
+			if state.tab == "rings" and (state.mode == "list" or state.mode == "edit") and GetCursorInfo() then
+				DropOnRing(CurrentRingKey(), state.mode == "edit" and state.slot or nil)
 			elseif button == "RightButton" then
-				HandleKey(state.tab == "settings" and "LEFT" or "ESCAPE")
+				if state.tab == "settings" then
+					HandleKey("LEFT")
+				elseif state.mode == "edit" then
+					HandleKey("PAD3")
+				else
+					HandleKey("ESCAPE")
+				end
 			else
 				HandleKey("PAD1")
 			end
@@ -1143,6 +1241,9 @@ local function Build()
 			if state.tab == "rings" and state.mode == "list" then
 				state.ringIndex = ui.listOffset + i
 				DropOnRing(CurrentRingKey())
+			elseif state.tab == "rings" and state.mode == "edit" then
+				state.slot = ui.listOffset + i
+				DropOnRing(CurrentRingKey(), state.slot)
 			end
 		end)
 		row.cells = {}
@@ -1205,6 +1306,11 @@ local function Build()
 
 	ui.info = Text(frame, "GameFontHighlightSmall", 320)
 	ui.info:SetPoint("TOP", ui.preview, "BOTTOM", 0, -12)
+
+	local rule = Fill(frame, "BORDER", 1, 1, 1, 0.08)
+	rule:SetPoint("BOTTOMLEFT", 20, 44)
+	rule:SetPoint("BOTTOMRIGHT", -20, 44)
+	rule:SetHeight(1)
 
 	ui.hint = Text(frame, "GameFontNormal")
 	ui.hint:SetPoint("BOTTOM", 0, 16)

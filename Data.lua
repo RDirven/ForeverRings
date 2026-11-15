@@ -93,6 +93,108 @@ local function IsQuestUsable(itemID)
 	return classID == CLASS_QUEST and C_Item.GetItemSpell(itemID) ~= nil
 end
 
+-- Game panels, opened by clicking their micro menu button or calling the
+-- function behind it. Only the ones this client has show up. The character
+-- window (and its Reputation/Skills tabs) only opens through its button: from
+-- addon code it trips over the client's secret values.
+--   buttons: micro menu buttons to click (first one that exists)
+--   fn, arg: function to call when there's no button
+ns.MENUS = {
+	{ id = "character", name = "Character", icon = "Interface\\Icons\\INV_Chest_Chain_05", buttons = { "CharacterMicroButton" } },
+	{ id = "bags", name = "Bags", icon = "Interface\\Icons\\INV_Misc_Bag_10", fn = "ToggleAllBags" },
+	{ id = "spellbook", name = "Spellbook", icon = "Interface\\Icons\\INV_Misc_Book_09", buttons = { "SpellbookMicroButton", "PlayerSpellsMicroButton" } },
+	{ id = "talents", name = "Talents", icon = "Interface\\Icons\\Ability_Marksmanship", buttons = { "TalentMicroButton" } },
+	{ id = "quests", name = "Quest log", icon = "Interface\\Icons\\INV_Misc_Book_08", buttons = { "QuestLogMicroButton" }, fn = "ToggleQuestLog" },
+	{ id = "map", name = "Map", icon = "Interface\\Icons\\INV_Misc_Map_01", fn = "ToggleWorldMap", buttons = { "WorldMapMicroButton" } },
+	{ id = "social", name = "Social", icon = "Interface\\Icons\\INV_Letter_15", buttons = { "SocialsMicroButton", "FriendsMicroButton" }, fn = "ToggleFriendsFrame" },
+	{ id = "lfg", name = "Group finder", icon = "Interface\\Icons\\INV_Misc_GroupNeedMore", buttons = { "LFGMicroButton", "LFDMicroButton", "GroupFinderMicroButton" } },
+	{ id = "achievements", name = "Achievements", icon = "Interface\\Icons\\Achievement_General", buttons = { "AchievementMicroButton" } },
+	{ id = "guild", name = "Guild", icon = "Interface\\Icons\\INV_Shirt_GuildTabard_01", buttons = { "GuildMicroButton" } },
+	{ id = "pvp", name = "PvP", icon = "Interface\\Icons\\INV_BannerPVP_02", buttons = { "PVPMicroButton" } },
+	{ id = "collections", name = "Collections", icon = "Interface\\Icons\\Spell_Nature_SpiritWolf", buttons = { "CollectionsMicroButton" } },
+	{ id = "calendar", name = "Calendar", icon = "Interface\\Icons\\Spell_Holy_BorrowedTime", fn = "ToggleCalendar" },
+	{ id = "gamemenu", name = "Game menu", icon = "Interface\\Icons\\INV_Misc_Gear_08", buttons = { "MainMenuMicroButton" } },
+}
+
+-- The micro menu button that opens a menu, if this client has one. Rings
+-- click it with secure code (see FIRE in Snippets.lua).
+function ns.MenuButton(menu)
+	for _, name in ipairs(menu.buttons or {}) do
+		if _G[name] then
+			return _G[name]
+		end
+	end
+end
+
+-- Opens a menu without a micro button by calling the function behind it.
+-- Returns nil when this client doesn't have the menu at all.
+local function MenuOpener(menu)
+	if menu.frame and not _G[menu.frame] then
+		return nil
+	end
+	if ns.MenuButton(menu) then
+		return true
+	end
+	local fn = menu.fn and _G[menu.fn]
+	if fn then
+		return function() fn(menu.arg) end
+	end
+end
+
+-- A menu as a slice: a secure click on its button, else an addon call.
+local function MenuAction(menu)
+	if ns.MenuButton(menu) then
+		return "click", "menu:" .. menu.id
+	end
+	return "run", "menu:" .. menu.id
+end
+
+local MENU_BY_ID = {}
+
+-- Carries out a "run" action picked in a ring. Called from insecure code, so
+-- only things addons may do in combat belong here.
+function ns.RunAction(action)
+	local what, arg = action:match("^(%a+):?(.*)$")
+	if what == "menu" then
+		local menu = MENU_BY_ID[arg]
+		local open = menu and MenuOpener(menu)
+		if type(open) == "function" then
+			open()
+		end
+	elseif what == "settings" then
+		ns.ToggleConfig()
+	end
+end
+
+for _, menu in ipairs(ns.MENUS) do
+	MENU_BY_ID[menu.id] = menu
+end
+
+function ns.MenuName(id)
+	return MENU_BY_ID[id] and MENU_BY_ID[id].name or id
+end
+
+-- The menus this client has, as slices.
+function ns.AvailableMenus()
+	local list = {}
+	for _, menu in ipairs(ns.MENUS) do
+		if MenuOpener(menu) then
+			local kind, value = MenuAction(menu)
+			list[#list + 1] = { type = kind, value = value, icon = menu.icon, name = menu.name, menu = menu.id }
+		end
+	end
+	return list
+end
+
+local function MenuSlice(id)
+	local menu = MENU_BY_ID[id]
+	if menu and MenuOpener(menu) then
+		local kind, value = MenuAction(menu)
+		return { type = kind, value = value, icon = menu.icon, name = menu.name }
+	end
+	return { name = (menu and menu.name or id) .. " (not in this game)", icon = "Interface\\Icons\\INV_Misc_QuestionMark" }
+end
+
 -- Raid target markers, skull first. /tm on an already marked target clears it.
 local MARKER_NAMES = { "Star", "Circle", "Diamond", "Triangle", "Moon", "Square", "Cross", "Skull" }
 
@@ -100,8 +202,8 @@ local function MarkerSlices()
 	local slices = {}
 	for i = 8, 1, -1 do
 		slices[#slices + 1] = {
-			type = "macro",
-			value = "/tm " .. i,
+			type = "raidtarget",
+			value = i,
 			icon = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. i,
 			name = _G["RAID_TARGET_" .. i] or MARKER_NAMES[i],
 		}
@@ -193,6 +295,14 @@ ns.autoRings = {
 	markers = {
 		label = "Markers",
 		build = MarkerSlices,
+		center = { type = "raidtarget", value = 0, name = "Clear" },
+	},
+	-- The most used game panels; every one of them can also go in your own rings.
+	menu = {
+		label = "Menu",
+		build = function()
+			return Truncate(ns.AvailableMenus())
+		end,
 	},
 	-- Favorites first; all usable mounts when nothing is favorited.
 	mount = {
@@ -225,6 +335,7 @@ local RING_ICONS = {
 	markers = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8",
 	mount = "Interface\\Icons\\Ability_Mount_RidingHorse",
 	tools = "Interface\\Icons\\Trade_BlackSmithing",
+	menu = "Interface\\Icons\\INV_Misc_Book_11",
 }
 local DEFAULT_RING_ICON = "Interface\\Icons\\INV_Jewelry_Ring_15"
 
@@ -253,7 +364,7 @@ ns.SETTINGS_ICON = "Interface\\Icons\\INV_Misc_Gear_01"
 -- A slot that opens the settings screen, so controller players never need
 -- to type /frings.
 local function SettingsSlice()
-	return { type = "macro", value = "/frings config", icon = ns.SETTINGS_ICON, name = "Settings" }
+	return { type = "run", value = "settings", icon = ns.SETTINGS_ICON, name = "Settings" }
 end
 
 -- The player's own WoW macro, by name. Its text is copied into the slot, so
@@ -282,6 +393,8 @@ function ns.ResolveAll()
 				slices[#slices + 1] = { type = "ring", value = entry.ring, name = ns.RingLabel(entry.ring) }
 			elseif entry.settings then
 				slices[#slices + 1] = SettingsSlice()
+			elseif entry.menu then
+				slices[#slices + 1] = MenuSlice(entry.menu)
 			elseif entry.macro then
 				slices[#slices + 1] = MacroSlice(entry.macro)
 			elseif entry.kind == "spell" then

@@ -38,14 +38,14 @@ local DEFAULTS = {
 	last = {},
 	binds = {},         -- [ring] = key, applied as priority override bindings
 	rings = {
-		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" }, { settings = true } } },
+		main = { label = "Main", slots = { { ring = "food" }, { ring = "mount" }, { ring = "bag" }, { ring = "quest" }, { ring = "markers" }, { ring = "tools" }, { ring = "menu" }, { settings = true } } },
 		tools = { label = "Tools", slots = {} },
 	},
 }
 
 -- Main ring layouts that shipped as the default. A Main that still matches
 -- one of these gets upgraded; anything the player changed is left alone.
-local OLD_DEFAULT_MAINS = { "food,mount,bag,tools", "food,mount,bag,quest,markers,tools" }
+local OLD_DEFAULT_MAINS = { "food,mount,bag,tools", "food,mount,bag,quest,markers,tools", "food,mount,bag,quest,markers,tools,settings" }
 
 local function MigrateMain()
 	local main = ForeverRingsDB.rings.main
@@ -119,6 +119,11 @@ local function CreateHeader()
 	header:SetAttribute("depth", 0)
 	header:Hide()
 	header:HookScript("OnShow", EnsureStickButtons)
+	header:HookScript("OnAttributeChanged", function(_, name, value)
+		if name == "run" and value then
+			ns.RunAction(value)
+		end
+	end)
 
 	for _, dir in ipairs(DIRECTIONS) do
 		local button = SecureButton("ForeverRingsDir_" .. dir, ns.snippets.direction, { "AnyDown", "AnyUp" })
@@ -178,6 +183,13 @@ local function RefreshAll()
 	end
 	refreshPending = false
 	ns.resolved = ns.ResolveAll()
+	-- Secure clicks on micro menu buttons need a reference to the button.
+	for _, menu in ipairs(ns.MENUS) do
+		local button = ns.MenuButton(menu)
+		if button then
+			SecureHandlerSetFrameRef(header, "menu:" .. menu.id, button)
+		end
+	end
 	for key, slices in pairs(ns.resolved) do
 		EnsureTrigger(key)
 		local prefix = "r:" .. key .. ":"
@@ -187,6 +199,9 @@ local function RefreshAll()
 			header:SetAttribute(prefix .. "v" .. i, slice and slice.value)
 		end
 		header:SetAttribute(prefix .. "n", #slices)
+		local center = ns.autoRings[key] and ns.autoRings[key].center
+		header:SetAttribute(prefix .. "ct", center and center.type or nil)
+		header:SetAttribute(prefix .. "cv", center and center.value or nil)
 		lastCounts[key] = #slices
 	end
 	for key in pairs(lastCounts) do
@@ -271,7 +286,7 @@ end)
 -- changes secure state, so it returns nil plus a message when in combat.
 
 local COMBAT = "Can't change rings in combat."
-local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, quest = 5, markers = 6, tools = 7 }
+local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, quest = 5, markers = 6, menu = 7, tools = 8 }
 
 -- main, the auto rings, tools, then custom rings alphabetically.
 function ns.RingKeys()
@@ -305,12 +320,24 @@ function ns.EntryName(entry)
 		return "Ring: " .. ns.RingLabel(entry.ring)
 	elseif entry.settings then
 		return "Settings"
+	elseif entry.menu then
+		return "Menu: " .. ns.MenuName(entry.menu)
 	elseif entry.macro then
 		return "Macro: " .. entry.macro
 	elseif entry.kind == "spell" then
 		return ns.SpellLabel(entry.id) or ("spell " .. entry.id)
 	end
 	return C_Item.GetItemNameByID(entry.id) or ("item " .. entry.id)
+end
+
+-- Main back to its default slots.
+function ns.ResetMain()
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.rings.main.slots = CopyTable(DEFAULTS.rings.main.slots)
+	RefreshAll()
+	return true
 end
 
 function ns.NewRing(name)
@@ -700,6 +727,8 @@ function ns.ExportRing(key)
 			slots[#slots + 1] = "r" .. entry.ring
 		elseif entry.settings then
 			slots[#slots + 1] = "o"
+		elseif entry.menu then
+			slots[#slots + 1] = "m" .. entry.menu
 		elseif entry.kind then
 			slots[#slots + 1] = (entry.kind == "spell" and "s" or "i") .. entry.id
 		end
@@ -743,6 +772,8 @@ function ns.ImportRing(code)
 			entry = { kind = "item", id = id }
 		elseif kind == "r" and (ForeverRingsDB.rings[rest] or ns.autoRings[rest]) then
 			entry = { ring = rest }
+		elseif kind == "m" and rest:match("^%a+$") then
+			entry = { menu = rest }
 		elseif token == "o" then
 			entry = { settings = true }
 		end

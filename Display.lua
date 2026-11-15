@@ -464,9 +464,13 @@ function Display:SelectedSlice()
 		if mx0 then
 			local cx, cy = GetCursorPosition()
 			local scale = header:GetEffectiveScale()
-			local ex, ey = cx / scale - header:GetLeft() - mx0, cy / scale - header:GetBottom() - my0
-			if ex * ex + ey * ey >= ns.DEAD_ZONE * ns.DEAD_ZONE then
-				dx, dy = ex, ey
+			local x, y = cx / scale - header:GetLeft(), cy / scale - header:GetBottom()
+			local mvx, mvy = x - mx0, y - my0
+			if mvx * mvx + mvy * mvy >= ns.MOVE_ZONE * ns.MOVE_ZONE then
+				local ex, ey = x - header:GetWidth() / 2, y - header:GetHeight() / 2
+				if ex * ex + ey * ey >= ns.DEAD_ZONE * ns.DEAD_ZONE then
+					dx, dy = ex, ey
+				end
 			end
 		end
 	end
@@ -561,6 +565,8 @@ function Display:Animate(elapsed)
 	elseif selected then
 		self.title:SetText(self.slices[selected].name or "")
 	else
-		self.title:SetText(ns.RingLabel(self.key))
+		local auto = ns.autoRings[self.key]
+		local center = auto and auto.center
+		self.title:SetText(ns.RingLabel(self.key) .. (center and ("\n|cff999999Middle: " .. center.name .. "|r") or ""))
 	end
 end

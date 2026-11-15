@@ -17,6 +17,7 @@ local _, ns = ...
 --   last:<ring>:t / last:<ring>:v   last action used from each ring
 
 ns.DEAD_ZONE = 40
+ns.MOVE_ZONE = 8
 
 -- The direction/confirm/back keys, also with a modifier held: a pad button
 -- set as Ctrl (R2 by default) turns PADRSTICKUP into CTRL-PADRSTICKUP, which
@@ -66,15 +67,40 @@ local CLOSE = [[
 
 -- Expects `kind` and `value`. Loads the action into self; the secure click
 -- that follows performs it. Macros keep their text in "macrotext".
+-- No macros for the addon's own actions: a macro can't start another macro,
+-- so they'd do nothing from an action bar button. And Blizzard panels and
+-- raid marks must be done by secure code, or the client blames the addon.
+--   click       clicks a game button (micro menu), value = frame ref name
+--   raidtarget  sets (toggles) or clears a raid mark on the target
+--   run         the addon's own things (its settings screen), insecure
 local FIRE = [[
-	self:SetAttribute("type", kind)
-	self:SetAttribute("typerelease", kind)
-	self:SetAttribute(kind == "macro" and "macrotext" or kind, value)
+	self:SetAttribute("unit", nil)
+	if kind == "run" then
+		self:SetAttribute("type", nil)
+		self:SetAttribute("typerelease", nil)
+		owner:SetAttribute("run", nil)
+		owner:SetAttribute("run", value)
+	elseif kind == "click" then
+		self:SetAttribute("type", "click")
+		self:SetAttribute("typerelease", "click")
+		self:SetAttribute("clickbutton", owner:GetFrameRef(value))
+	elseif kind == "raidtarget" then
+		self:SetAttribute("type", "raidtarget")
+		self:SetAttribute("typerelease", "raidtarget")
+		self:SetAttribute("unit", "target")
+		self:SetAttribute("marker", value)
+		self:SetAttribute("action", value == 0 and "clear" or "toggle")
+	else
+		self:SetAttribute("type", kind)
+		self:SetAttribute("typerelease", kind)
+		self:SetAttribute(kind == "macro" and "macrotext" or kind, value)
+	end
 ]]
 
 -- Sets locals `key` and `pick`. The stick direction wins, then the last one it
--- pointed at (so letting go keeps the selection); otherwise the mouse movement
--- since the ring opened is used, so keyboard players can aim too.
+-- pointed at (so letting go keeps the selection). Otherwise, once the mouse
+-- has moved, its direction from the middle of the ring (the screen centre)
+-- is used, wherever the mouse was when the ring opened.
 local PICK = ([[
 	local pick
 	local key = owner:GetAttribute("active")
@@ -91,9 +117,13 @@ local PICK = ([[
 		local mx, my = owner:GetMousePosition()
 		local mx0, my0 = owner:GetAttribute("mx0"), owner:GetAttribute("my0")
 		if mx and mx0 then
-			local ex, ey = mx * owner:GetWidth() - mx0, my * owner:GetHeight() - my0
-			if ex * ex + ey * ey >= %d then
-				dx, dy = ex, ey
+			local w, h = owner:GetWidth(), owner:GetHeight()
+			local mvx, mvy = mx * w - mx0, my * h - my0
+			if mvx * mvx + mvy * mvy >= %d then
+				local ex, ey = mx * w - w / 2, my * h - h / 2
+				if ex * ex + ey * ey >= %d then
+					dx, dy = ex, ey
+				end
 			end
 		end
 	end
@@ -102,11 +132,19 @@ local PICK = ([[
 		local angle = math.deg(math.atan2(dx, dy)) %% 360
 		pick = math.floor((angle + step / 2) / step) %% n + 1
 	end
-]]):format(ns.DEAD_ZONE * ns.DEAD_ZONE)
+]]):format(ns.MOVE_ZONE * ns.MOVE_ZONE, ns.DEAD_ZONE * ns.DEAD_ZONE)
 
 -- Expects `key`, `pick`, `closeIfNothing`. Enters a sub-ring, or fires the
 -- action and remembers it as the last one used from the ring that was opened.
+-- A ring can have an action in its middle (Markers: clear): used when nothing
+-- is aimed at.
 local ACT = [[
+	if not pick and owner:GetAttribute("r:" .. key .. ":ct") then
+		local kind = owner:GetAttribute("r:" .. key .. ":ct")
+		local value = owner:GetAttribute("r:" .. key .. ":cv")
+]] .. CLOSE .. FIRE .. [[
+		return
+	end
 	if not pick then
 		if closeIfNothing then
 ]] .. CLOSE .. [[
@@ -130,7 +168,7 @@ local ACT = [[
 	if not kind then
 		return false
 	end
-	if value ~= "/frings config" then
+	if value ~= "settings" then
 		owner:SetAttribute("last:" .. root .. ":t", kind)
 		owner:SetAttribute("last:" .. root .. ":v", value)
 	end
@@ -175,7 +213,8 @@ ns.snippets = {
 	owner:SetAttribute("held", nil)
 	self:SetAttribute("useOnKeyDown", false)
 ]] .. PICK .. [[
-	if not pick and owner:GetAttribute("tap-repeat") and not owner:GetAttribute("sticky") and not owner:GetAttribute("moved") then
+	if not pick and owner:GetAttribute("tap-repeat") and not owner:GetAttribute("sticky") and not owner:GetAttribute("moved")
+		and not owner:GetAttribute("r:" .. key .. ":ct") then
 		local kind = owner:GetAttribute("last:" .. key .. ":t")
 		local value = owner:GetAttribute("last:" .. key .. ":v")
 		if kind then
@@ -237,5 +276,10 @@ ns.snippets = {
 		return false
 	end
 	local closeIfNothing = false
-]] .. PICK .. ACT,
+]] .. PICK .. [[
+	-- Only an aimed slot: never the ring's middle action.
+	if not pick then
+		return false
+	end
+]] .. ACT,
 }

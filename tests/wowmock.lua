@@ -43,6 +43,7 @@ function M.New(world)
 		timers = {},
 		cursor = { 960, 540 },
 		modifiers = {},
+		marks = {},
 		actions = {},
 		freelook = true,
 		cvars = {},
@@ -87,6 +88,7 @@ function M.New(world)
 	function Region:RemoveMaskTexture(mask) self.masks[mask] = nil end
 	function Region:SetText(text) self.text = text ~= nil and tostring(text) or nil end
 	function Region:GetText() return self.text end
+	function Region:GetStringWidth() return #(self.text or "") * 8 end
 	function Region:Show() self.shown = true end
 	function Region:Hide() self.shown = false end
 	function Region:SetShown(on) self.shown = not not on end
@@ -125,6 +127,8 @@ function M.New(world)
 	function Frame:EnableMouseWheel(on) self.wheel = on end
 	function Frame:RegisterForDrag(...) self.drag = { ... } end
 	function Frame:EnableGamePadStick(on) self.sticks = on end
+	function Frame:Click() self.clicked = (self.clicked or 0) + 1 end
+	function Frame:GetFrameRef(name) return self.refs and self.refs[name] end
 	function Frame:LockHighlight() self.highlight = true end
 	function Frame:Enable() self.enabled = true end
 	function Frame:Disable() self.enabled = false end
@@ -230,9 +234,22 @@ function M.New(world)
 		if result ~= false then
 			local kind = frame.attrs.type
 			if kind then
-				table.insert(game.casts, { type = kind, value = frame.attrs[kind == "macro" and "macrotext" or kind] })
+				local value = frame.attrs[kind == "macro" and "macrotext" or kind]
+				if kind == "raidtarget" then
+					value = frame.attrs.marker
+					game.marks[frame.attrs.unit] = frame.attrs.action ~= "clear" and value or nil
+				elseif kind == "click" then
+					value = frame.attrs.clickbutton
+					value:Click()
+				end
+				table.insert(game.casts, { type = kind, value = value })
 			end
 		end
+	end
+
+	-- A /click from a macro: one click, down or up.
+	function game.ClickButton(frame, down)
+		return Click(frame, down)
 	end
 
 	-- Presses a key: override bindings (owned by the ring header) win.
@@ -355,6 +372,10 @@ function M.New(world)
 		UIParent = UIParent,
 		CreateFrame = CreateFrame,
 		SecureHandlerWrapScript = SecureHandlerWrapScript,
+		SecureHandlerSetFrameRef = function(header, name, frame)
+			header.refs = header.refs or {}
+			header.refs[name] = frame
+		end,
 		InCombatLockdown = function() return game.inCombat end,
 		GetCursorPosition = function() return game.cursor[1], game.cursor[2] end,
 		SetBindingClick = function(key, name, button)
@@ -418,6 +439,8 @@ function M.New(world)
 		end,
 		PickupMacro = function(index) game.cursorInfo = { "macro", index } end,
 		HasAction = function(slot) return game.actions[slot] ~= nil end,
+		SetRaidTarget = function(unit, index) game.marks[unit] = index ~= 0 and index or nil end,
+		GetRaidTargetIndex = function(unit) return game.marks[unit] end,
 		-- Only when a test asks for it: otherwise the addon falls back to bars 1-6.
 		EnumerateFrames = nil,
 		GetActionInfo = function(slot)

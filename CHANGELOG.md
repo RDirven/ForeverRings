@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.3
+
+- **Menu ring**: the game panels in one ring: Character, Bags, Spellbook, Talents, Quest log, Map, Social, Group finder (what your client has). It's in Main by default.
+- **Every game panel can go in your own rings**: new picker category *Menus* with Character, Bags, Spellbook, Talents, Quest log, Map, Social, Guild, Group finder, PvP, Achievements, Collections, Calendar and Game menu.
+- **Reset Main** (Settings > Main ring) puts Main back to its default slots, Settings slot included.
+- Clearing a slot asks first: press X (or right-click) twice.
+- **Markers: Clear** in the middle of the ring: press A without aiming, tap the ring's button, or click the middle.
+- Fixed: from an action bar button, menus, markers and the Settings slot did nothing (a macro can't start another macro). They now run without a macro: menus as a secure click on their micro menu button, markers as a secure raid mark. No more "action blocked" / secret value errors.
+- **Mouse aims from the middle of the ring**, wherever the mouse was when the ring opened. Not moving it still means "tap to repeat".
+- **Cleaner settings screen.** Every view has a title row (where you are, e.g. *Main > slot 4*) with its buttons on the right, so nothing overlaps.
+- **Editing a ring lists its slots** on the left: click one to choose what goes in it, right-click to clear it, drag things onto it. Up/Down on a controller.
+- The picker categories (Bags, Spells, Mounts, Toys, Macros, Rings) have their own row and can be clicked. LB/RB still switch them on a controller.
+
 ## 0.5.2
 
 - **Rings live on your action bar now, not on hidden buttons.** Every ring row has **Edit**, **Set key**, **Clear**, **+** and **-**. *Set key* asks you to press the action bar button where the ring should go (L2/R2 combos included) and puts it there; *Clear* takes it off your bars. `/frings bar <ring>` puts it in the first free visible slot.

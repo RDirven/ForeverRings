@@ -247,6 +247,16 @@ Test("release-pick goes into a sub-ring, then picks there", function()
 	Eq(dirs.left.attrs.item, "item:7", "left = slice 7")
 end)
 
+Test("mouse aims from the middle of the ring, wherever it was when the ring opened", function()
+	local t, m = Handle({ ring = "main" }), Handle({})
+	header.mouse = { 0.9, 0.5 }             -- opened with the mouse far right
+	Run("trigger", t, true)
+	Eq(Run("mouse", m, true), false, "not moved yet: nothing picked")
+	header.mouse = { 0.8, 0.5 }             -- moved a bit to the left, still right of the middle
+	Eq(Run("mouse", m, true), nil, "click proceeds")
+	Eq(m.attrs.spell, 111, "right of the middle = right slot")
+end)
+
 Test("B goes back one level, then closes", function()
 	local t = Handle({ ring = "main" })
 	Run("trigger", t, true)
