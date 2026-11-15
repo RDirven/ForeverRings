@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.4
 
 - Fixed: menus with a micro menu button (Character, Spellbook, Talents, Quest log, Group finder...) didn't open from a ring. They're now a secure click on that button.
 - Fixed: "SecureTemplates.lua:561: attempt to call a nil value" when picking Settings, Bags, Map, Social or Calendar from a ring (mouse or action bar).
