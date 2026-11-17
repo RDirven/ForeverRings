@@ -2,6 +2,20 @@
 
 ## 0.6.0
 
+- **Hover cast** (Settings > Party heals): open the Party ring, aim at someone and press A, B, X or Y, or hold L2 or R2 with them: twelve heals, each landing on whoever you aim at without changing your target. The ring stays open so you can keep healing; its button closes it. Works whether L2/R2 are plain buttons or set as Alt/Shift/Ctrl.
+- **Party ring as a pizza**: every member is a big slice that fills with solid colour from the crust toward the centre (green to red, grey when dead), names on the slices. Works with the client's secret health in combat. Sharp, anti-aliased edges.
+- Hover cast uses **what's on your action bar** under A, B, X and Y (and L2/R2 + them, when the client treats those as modifiers) unless you pick a spell yourself.
+- **Dispellable debuffs** on the Party ring: up to three icons under a name, for debuffs you can dispel.
+- The Party ring drops the circles around names; whoever needs healing most pulses their slice red.
+- **Party button** (Settings): *Tap*: tap, aim, one heal and it closes. *Toggle*: tap, heal as many as you like, tap again to close. *Hold*: open while you hold the button, let go to close (needs a key bound with `/frings bind party <key>`; an action bar button only sends one click).
+- **Health fills from** (Settings): the crust inward, or the centre outward.
+- **Your buffs** (Settings): *HoTs only* skips your buffs over five minutes (Blessing of the Bronze...); hide any by name with `/frings hidebuff <name>`.
+- **Your HoTs** on the Party ring: a green circle around the name and the icons above it while your HoT or shield is on someone.
+- **Ring opacity** (Settings): make everything but the slot you aim at see-through, down to 0%.
+- **Hold still while aiming** (was *Hold camera still*): aiming with the left stick no longer walks your character.
+- **Retail**: the addon loads in retail too (Interface 120105, 120107).
+- Fixed: "Secret values are only allowed during untainted execution" (SetCooldown) in retail combat. Secret cooldowns and usability are left alone.
+
 - **Party ring, for healers on a controller.** You (on top) and your group in a circle, each with a health bar and their name in class colour. Aim at someone and release: your heal lands on them **without changing your target**. Works in combat.
   - Pick the heal in the settings screen: open the Party ring, press A and choose from Spells. X clears it; without a spell, the ring targets whoever you aim at.
   - Whoever needs healing most (below 80%) pulses red. Members out of range fade, dead ones turn grey.

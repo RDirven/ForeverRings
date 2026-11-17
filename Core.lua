@@ -35,10 +35,16 @@ local DEFAULTS = {
 	holdCamera = true,
 	vibration = true,
 	scale = 1,
+	opacity = 1,          -- everything but the aimed slot: 1 = solid ... 0 = invisible
 	welcomed = false,
-	partyHeals = "one",   -- "one": one spell | "buttons": release, A, X and Y each a spell
+	partyHeals = "one",   -- "one": one spell | "buttons": release, A, X and Y each a spell | "hover": Hover cast
 	partyOrder = "group", -- "group": group order | "role": tank right, healer left, DPS below
 	partyButtons = {},    -- [a|x|y] = spellID
+	partyHover = {},      -- Hover cast: [a|b|x|y|l-a...|r-y] = spellID
+	partyOpen = "tap",    -- Hover cast: "tap" one heal closes | "toggle" open until pressed again | "hold" open while held
+	partyFill = "crust",  -- Party ring health grows from the "crust" inward or the "centre" outward
+	partyBuffs = "hots",  -- your buffs shown: "hots" (up to five minutes) | "all"
+	hiddenBuffs = {},     -- [lower-case name] = true: never shown on the Party ring
 	last = {},
 	binds = {},         -- [ring] = key, applied as priority override bindings
 	rings = {
@@ -125,6 +131,19 @@ local function ApplyInput()
 	header:SetAttribute("key-x", "PAD3")
 	header:SetAttribute("key-y", "PAD4")
 	header:SetAttribute("tap-repeat", ForeverRingsDB.tapRepeat or nil)
+	-- Triggers the client turns into modifiers: L2 + A arrives as ALT-PAD1.
+	local sideOf = {}
+	for mod, cvar in pairs({ ALT = "GamePadEmulateAlt", CTRL = "GamePadEmulateCtrl", SHIFT = "GamePadEmulateShift" }) do
+		local button = GetCVar and GetCVar(cvar)
+		sideOf[mod] = button == "PADLTRIGGER" and "l" or button == "PADRTRIGGER" and "r" or nil
+	end
+	for _, mods in ipairs({ "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "ALT-CTRL-" }) do
+		local side
+		for mod in mods:gmatch("(%a+)-") do
+			side = side or sideOf[mod]
+		end
+		header:SetAttribute("modlayer-" .. mods, side)
+	end
 	header:SetAttribute("release-pick", ForeverRingsDB.releasePick or nil)
 end
 
@@ -152,6 +171,9 @@ local function CreateHeader()
 	SecureButton("ForeverRingsBack", ns.snippets.back, { "AnyDown" })
 	SecureButton("ForeverRingsButtonX", ns.snippets.buttonx, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
 	SecureButton("ForeverRingsButtonY", ns.snippets.buttony, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
+	for _, side in ipairs({ "l", "r" }) do
+		SecureButton("ForeverRingsLayer_" .. side, ns.snippets.layer, { "AnyDown", "AnyUp" }):SetAttribute("layer", side)
+	end
 	-- Covers the screen while a ring is open, so the mouse can pick too.
 	local mouse = SecureButton("ForeverRingsMouse", ns.snippets.mouse, { "LeftButtonDown", "RightButtonDown" }, header)
 	mouse:ClearAllPoints()
@@ -222,10 +244,18 @@ local function RefreshAll()
 		header:SetAttribute(prefix .. "ct", center and center.type or nil)
 		header:SetAttribute(prefix .. "cv", center and center.value or nil)
 		-- Party ring with "spell per button": A, X and Y cast their own spell.
-		local buttons = key == "party" and ForeverRingsDB.partyHeals == "buttons" and ForeverRingsDB.partyButtons or {}
-		for _, b in ipairs({ "a", "x", "y" }) do
-			header:SetAttribute(prefix .. "btn-" .. b, buttons[b])
+		-- Hover cast: all twelve buttons, and the ring stays open.
+		local mode = key == "party" and ForeverRingsDB.partyHeals
+		local buttons = mode == "buttons" and ForeverRingsDB.partyButtons or mode == "hover" and ForeverRingsDB.partyHover or {}
+		local fromBar = mode == "hover" and ns.HoverBarSlots() or {}
+		for _, b in ipairs(ns.HOVER_BUTTONS) do
+			local own = buttons[b]
+			header:SetAttribute(prefix .. "btn-" .. b, own or fromBar[b])
+			header:SetAttribute(prefix .. "btnk-" .. b, not own and fromBar[b] and "action" or nil)
 		end
+		header:SetAttribute(prefix .. "hover", mode == "hover" or nil)
+		header:SetAttribute(prefix .. "holdclose", mode == "hover" and ForeverRingsDB.partyOpen == "hold" or nil)
+		header:SetAttribute(prefix .. "staysopen", mode == "hover" and ForeverRingsDB.partyOpen ~= "tap" or nil)
 		lastCounts[key] = #slices
 	end
 	for key in pairs(lastCounts) do
@@ -260,6 +290,11 @@ events:SetScript("OnEvent", function(_, event)
 			end
 		end
 		MigrateMain()
+		ForeverRingsDB.partyHover = ForeverRingsDB.partyHover or {}
+		ForeverRingsDB.partyOpen = ForeverRingsDB.partyOpen or "tap"
+		ForeverRingsDB.partyFill = ForeverRingsDB.partyFill or "crust"
+		ForeverRingsDB.partyBuffs = ForeverRingsDB.partyBuffs or "hots"
+		ForeverRingsDB.hiddenBuffs = ForeverRingsDB.hiddenBuffs or {}
 		ns.ThawCamera()
 		CreateHeader()
 		-- Rings now live on the action bar. Buttons set in older versions
@@ -280,6 +315,8 @@ events:SetScript("OnEvent", function(_, event)
 		events:RegisterEvent("NEW_MOUNT_ADDED")
 		events:RegisterEvent("NEW_TOY_ADDED")
 		events:RegisterEvent("UPDATE_MACROS")
+		events:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
+		events:RegisterEvent("UPDATE_BINDINGS")
 		events:RegisterEvent("GROUP_ROSTER_UPDATE")
 		events:RegisterEvent("UNIT_NAME_UPDATE")
 		RefreshAll()
@@ -302,6 +339,9 @@ events:SetScript("OnEvent", function(_, event)
 	else
 		if event == "BAG_UPDATE_DELAYED" and header:IsShown() then
 			ns.display:UpdateCounts()
+		end
+		if event == "ACTIONBAR_SLOT_CHANGED" and ns.OnActionBarChanged then
+			ns.OnActionBarChanged()
 		end
 		QueueRefresh()
 	end
@@ -415,8 +455,73 @@ end
 -- With "spell per button", the Party ring has four spells: 1 = on release,
 -- 2 = A, 3 = X, 4 = Y. Otherwise only the first.
 ns.PARTY_BUTTONS = { "release", "a", "x", "y" }
+-- Hover cast: twelve, the face buttons alone and with L2 or R2 held.
+ns.HOVER_BUTTONS = { "a", "b", "x", "y", "l-a", "l-b", "l-x", "l-y", "r-a", "r-b", "r-x", "r-y" }
+
+-- Hover cast without an own spell uses what's on the action bar under that
+-- button: the slot the game's binding for A (PAD1), L2 + A ... points at.
+-- L2 / R2 only count when the client turns them into modifiers; otherwise
+-- their page can't be known ahead.
+local FACE_KEYS = { a = "PAD1", b = "PAD2", x = "PAD3", y = "PAD4" }
+local BAR_FRAMES = {
+	ACTIONBUTTON = "ActionButton", MULTIACTIONBAR1BUTTON = "MultiBarBottomLeftButton",
+	MULTIACTIONBAR2BUTTON = "MultiBarBottomRightButton", MULTIACTIONBAR3BUTTON = "MultiBarRightButton",
+	MULTIACTIONBAR4BUTTON = "MultiBarLeftButton", MULTIACTIONBAR5BUTTON = "MultiBar5Button",
+	MULTIACTIONBAR6BUTTON = "MultiBar6Button", MULTIACTIONBAR7BUTTON = "MultiBar7Button",
+}
+
+local function SlotForBinding(key)
+	local command = GetBindingAction and GetBindingAction(key, true)
+	local bar, index = (command or ""):match("^(%u+%d?BUTTON)(%d+)$")
+	local frame = bar and BAR_FRAMES[bar] and _G[BAR_FRAMES[bar] .. index]
+	local slot = frame and (frame.action or (frame.GetAttribute and tonumber(frame:GetAttribute("action"))))
+	return slot and HasAction(slot) and slot or nil
+end
+
+-- Name of what's in an action slot, for showing it.
+function ns.ActionName(slot)
+	local kind, id = GetActionInfo(slot)
+	if kind == "spell" then
+		return C_Spell.GetSpellName(id)
+	elseif kind == "item" then
+		return C_Item.GetItemNameByID(id)
+	elseif kind == "macro" then
+		return GetMacroInfo(id)
+	end
+end
+
+function ns.HoverBarSlots()
+	local modOf = {}
+	for mod, cvar in pairs({ ALT = "ALT-", CTRL = "CTRL-", SHIFT = "SHIFT-" }) do
+		local button = GetCVar and GetCVar("GamePadEmulate" .. (mod == "CTRL" and "Ctrl" or mod:sub(1, 1) .. mod:sub(2):lower()))
+		if button == "PADLTRIGGER" then
+			modOf.l = cvar
+		elseif button == "PADRTRIGGER" then
+			modOf.r = cvar
+		end
+	end
+	local slots = {}
+	for face, key in pairs(FACE_KEYS) do
+		slots[face] = SlotForBinding(key)
+		for _, layer in ipairs({ "l", "r" }) do
+			if modOf[layer] then
+				slots[layer .. "-" .. face] = SlotForBinding(modOf[layer] .. key)
+			end
+		end
+	end
+	return slots
+end
+
+-- How many spells the Party ring takes in the current mode.
+function ns.PartySpellCount()
+	local mode = ForeverRingsDB.partyHeals
+	return mode == "hover" and #ns.HOVER_BUTTONS or mode == "buttons" and #ns.PARTY_BUTTONS or 1
+end
 
 function ns.PartySpell(index)
+	if ForeverRingsDB.partyHeals == "hover" then
+		return ForeverRingsDB.partyHover[ns.HOVER_BUTTONS[index]]
+	end
 	if index == 1 then
 		return ForeverRingsDB.partySpell
 	end
@@ -428,7 +533,9 @@ function ns.SetPartySpell(spellID, index)
 		return nil, COMBAT
 	end
 	index = index or 1
-	if index == 1 then
+	if ForeverRingsDB.partyHeals == "hover" then
+		ForeverRingsDB.partyHover[ns.HOVER_BUTTONS[index]] = spellID
+	elseif index == 1 then
 		ForeverRingsDB.partySpell = spellID
 	else
 		ForeverRingsDB.partyButtons[ns.PARTY_BUTTONS[index]] = spellID
@@ -442,6 +549,23 @@ function ns.SetPartyHeals(mode)
 		return nil, COMBAT
 	end
 	ForeverRingsDB.partyHeals = mode
+	RefreshAll()
+	return true
+end
+
+function ns.SetPartyFill(from)
+	ForeverRingsDB.partyFill = from
+end
+
+function ns.SetPartyBuffs(which)
+	ForeverRingsDB.partyBuffs = which
+end
+
+function ns.SetPartyOpen(how)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.partyOpen = how
 	RefreshAll()
 	return true
 end
@@ -462,7 +586,7 @@ function ns.SetSlot(key, index, entry)
 		if entry.kind ~= "spell" then
 			return nil, "The Party ring casts spells on whoever you aim at: pick one from Spells."
 		end
-		return ns.SetPartySpell(entry.id, ForeverRingsDB.partyHeals == "buttons" and math.min(index, 4) or 1)
+		return ns.SetPartySpell(entry.id, math.min(index, ns.PartySpellCount()))
 	end
 	if InCombatLockdown() then
 		return nil, COMBAT
@@ -481,7 +605,7 @@ end
 function ns.RemoveSlot(key, index)
 	local ring = ForeverRingsDB.rings[key]
 	if key == "party" then
-		index = ForeverRingsDB.partyHeals == "buttons" and math.min(index, 4) or 1
+		index = math.min(index, ns.PartySpellCount())
 		local spell = ns.PartySpell(index)
 		if not spell then
 			return nil, "No spell set there."
@@ -639,6 +763,27 @@ function ns.RingOnBar(key)
 	end
 end
 
+-- A slot with this ring's macro other than `except`, or nil.
+function ns.RingOnBarExcept(key, except)
+	local index = RingMacroIndex(key)
+	if index then
+		for slot = 1, 180 do
+			local kind, id = GetActionInfo(slot)
+			if kind == "macro" and id == index and slot ~= except then
+				return slot
+			end
+		end
+	end
+end
+
+function ns.RemoveRingFromSlot(key, slot)
+	local kind, id = GetActionInfo(slot)
+	if kind == "macro" and id == RingMacroIndex(key) and not InCombatLockdown() then
+		PickupAction(slot)
+		ClearCursor()
+	end
+end
+
 -- Puts the ring in this action slot (moving it if it was elsewhere). What
 -- was in the slot goes back to the spellbook/bags, like dragging over it.
 function ns.PlaceRingInSlot(key, slot)
@@ -781,6 +926,12 @@ ns.SCALES = { 0.8, 0.9, 1, 1.1, 1.25, 1.5 }
 
 function ns.SetScale(scale)
 	ForeverRingsDB.scale = scale
+end
+
+ns.OPACITIES = { 1, 0.8, 0.6, 0.4, 0.2, 0 }
+
+function ns.SetOpacity(opacity)
+	ForeverRingsDB.opacity = opacity
 end
 
 function ns.SetVibration(on)
@@ -1045,6 +1196,28 @@ function commands.refresh()
 	Print("Rings refreshed.")
 end
 
+function commands.hidebuff(name)
+	if name == "" then
+		local list = {}
+		for buff in pairs(ForeverRingsDB.hiddenBuffs) do
+			list[#list + 1] = buff
+		end
+		table.sort(list)
+		return Print("Hidden buffs: " .. (#list > 0 and table.concat(list, ", ") or "none") .. ". Usage: /frings hidebuff <name>, /frings showbuff <name>")
+	end
+	ForeverRingsDB.hiddenBuffs[name:lower()] = true
+	Print("'" .. name .. "' won't show on the Party ring.")
+end
+
+function commands.showbuff(name)
+	ForeverRingsDB.hiddenBuffs[name:lower()] = nil
+	Print("'" .. name .. "' shows on the Party ring again.")
+end
+
+function commands.partydebug()
+	ns.PartyDebug()
+end
+
 function commands.config()
 	ns.ToggleConfig()
 end
@@ -1053,6 +1226,7 @@ function commands.help()
 	Print("Bind rings under Options > Keybindings > AddOns > Forever Rings, or with /frings.")
 	Print("Hold the ring button, aim with the stick, release (or press A). B goes back.")
 	Print("/frings new|delete <ring>  ·  add <ring> <link|ring:name>  ·  remove <ring> <n>")
+	Print("/frings hidebuff <name> / showbuff <name>   which of your buffs the Party ring shows")
 	Print("/frings bar <ring>   put a ring on your action bar  ·  unbind <ring>   remove its button")
 	Print("/frings list [ring]  ·  bind <ring> <key>  ·  style clean|classic  ·  input rstick|lstick|dpad")
 	Print("/frings export <ring>  ·  import <code>   share rings with friends")

@@ -247,9 +247,9 @@ local SETTINGS = {
 		change = function() return ns.SetReleasePick(not ForeverRingsDB.releasePick) end,
 	},
 	{
-		label = "Hold camera still",
+		label = "Hold still while aiming",
 		value = function() return ForeverRingsDB.holdCamera and "On" or "Off" end,
-		help = "While a ring is open, the right stick only aims\nand doesn't move the camera.",
+		help = "While a ring is open, the stick you aim with only\naims: the right stick doesn't turn the camera, the\nleft stick doesn't walk.",
 		change = function() ns.SetHoldCamera(not ForeverRingsDB.holdCamera) return true end,
 	},
 	{
@@ -272,15 +272,59 @@ local SETTINGS = {
 	},
 	{
 		label = "Party heals",
-		value = function() return ForeverRingsDB.partyHeals == "buttons" and "Spell per button" or "One spell" end,
+		value = function()
+			local mode = ForeverRingsDB.partyHeals
+			return mode == "hover" and "Hover cast" or mode == "buttons" and "Spell per button" or "One spell"
+		end,
 		help = "One spell: aim at someone and release to cast it.\nSpell per button: release, A, X and Y each cast\ntheir own heal on whoever you aim at.",
-		change = function() return ns.SetPartyHeals(ForeverRingsDB.partyHeals == "buttons" and "one" or "buttons") end,
+		change = function(step)
+			local modes = { "one", "buttons", "hover" }
+			local now = 1
+			for i, m in ipairs(modes) do
+				if m == ForeverRingsDB.partyHeals then now = i end
+			end
+			return ns.SetPartyHeals(modes[(now - 1 + (step or 1)) % #modes + 1])
+		end,
+	},
+	{
+		label = "Party button",
+		value = function()
+			local how = ForeverRingsDB.partyOpen
+			return how == "hold" and "Hold" or how == "toggle" and "Toggle" or "Tap"
+		end,
+		help = "Hover cast. Tap: tap, aim, one heal, it closes.\nToggle: tap, heal as many as you like, tap again\nto close. Hold: open while you hold the button, let\ngo to close (needs a key: /frings bind party <key>).",
+		change = function(step)
+			local order = { "tap", "toggle", "hold" }
+			local now = 1
+			for i, how in ipairs(order) do
+				if how == ForeverRingsDB.partyOpen then now = i end
+			end
+			return ns.SetPartyOpen(order[(now - 1 + (step or 1)) % #order + 1])
+		end,
+	},
+	{
+		label = "Health fills from",
+		value = function() return ForeverRingsDB.partyFill == "centre" and "Centre" or "Crust" end,
+		help = "Party ring. Crust: a slice fills from the outside\nin, so it empties toward the crust. Centre: it fills\nfrom the middle out.",
+		change = function() ns.SetPartyFill(ForeverRingsDB.partyFill == "centre" and "crust" or "centre") return true end,
+	},
+	{
+		label = "Your buffs",
+		value = function() return ForeverRingsDB.partyBuffs == "all" and "All" or "HoTs only" end,
+		help = "Party ring: which of your buffs show (green circle\nand icons). HoTs only skips anything over five minutes,\nlike Blessing of the Bronze. Hide one by name with\n/frings hidebuff <name>.",
+		change = function() ns.SetPartyBuffs(ForeverRingsDB.partyBuffs == "all" and "hots" or "all") return true end,
 	},
 	{
 		label = "Party order",
 		value = function() return ForeverRingsDB.partyOrder == "role" and "By role" or "Group order" end,
 		help = "By role: you on top, the tank always right, a\nhealer left and DPS below, so they never move.\nGroup order: everyone in the order of your group.",
 		change = function() return ns.SetPartyOrder(ForeverRingsDB.partyOrder == "role" and "group" or "role") end,
+	},
+	{
+		label = "Ring opacity",
+		value = function() return math.floor((ForeverRingsDB.opacity or 1) * 100 + 0.5) .. "%" end,
+		help = "How see-through a ring is, except the slot you\naim at: that one always stays fully visible.\n0% shows only what you aim at.",
+		change = function(step) ns.SetOpacity(Cycle(ns.OPACITIES, ForeverRingsDB.opacity or 1, -step)) return true end,
 	},
 	{
 		label = "Main ring",
@@ -500,7 +544,10 @@ local function RenderRings()
 	-- The editor lists the ring's own slots.
 	if key and state.mode == "edit" then
 		local slices = PreviewSlices(key)
-		state.slot = math.max(1, math.min(state.slot, #slices))
+		-- (The Party ring's rows are its spells, not its members: see below.)
+		if key ~= "party" then
+			state.slot = math.max(1, math.min(state.slot, #slices))
+		end
 		local items = {}
 		for i, slice in ipairs(slices) do
 			items[i] = slice.add and { text = "|cff59bfff+ Add|r", icon = false }
@@ -510,6 +557,32 @@ local function RenderRings()
 		RenderList(items, state.slot)
 		RenderPreview(key, state.slot)
 		if key == "party" then
+			if ForeverRingsDB.partyHeals == "hover" then
+				-- Twelve rows: the face buttons alone, with L2, with R2.
+				state.slot = math.min(state.slot, #ns.HOVER_BUTTONS)
+				local barSlots = ns.HoverBarSlots()
+				local rows = {}
+				for i, id in ipairs(ns.HOVER_BUTTONS) do
+					local layer, face = id:match("^(%a)%-(%a)$")
+					local label = (layer == "l" and "L2 + " or layer == "r" and "R2 + " or "") .. (face or id):upper()
+					local spell = ns.PartySpell(i)
+					local text = spell and (C_Spell.GetSpellName(spell) or "?")
+					local icon = spell and C_Spell.GetSpellTexture(spell)
+					if not spell then
+						-- Nothing chosen: the action bar's spell for that button.
+						local slot = barSlots[id]
+						if slot then
+							text = "|cff888888" .. (ns.ActionName(slot) or "action") .. " (bar)|r"
+							icon = GetActionTexture and GetActionTexture(slot)
+						end
+					end
+					rows[i] = { text = label .. ":  " .. (text or "|cff888888none|r"), icon = icon or false }
+				end
+				ui.listTitle:SetText("Party  |cff888888>  Hover cast|r")
+				RenderList(rows, state.slot)
+				ui.info:SetText("Open the ring, aim at someone, then press A, B, X or Y\n(or hold L2 or R2 with them): that spell lands on\nthem. The ring stays open; its button closes it.")
+				return SetHint("Up/Down button   A choose spell" .. (ns.PartySpell(state.slot) and "   X clear" or "") .. "   B back")
+			end
 			if ForeverRingsDB.partyHeals == "buttons" then
 				-- One row per button, each with its own spell.
 				state.slot = math.min(state.slot, 4)
@@ -625,7 +698,7 @@ Render = function()
 	if state.capture then
 		RenderToolbar()
 		if state.capture == "bar" then
-			ui.capture:SetText("Press the action bar button where " .. ns.RingLabel(state.barPick) .. " should go\n(for example L2 + Triangle). An empty one is best.\n\n|cff888888Right-click here or wait 15 seconds to cancel.|r")
+			ui.capture:SetText("Press the action bar button where " .. ns.RingLabel(state.barPick) .. " should go\n(for example L2 + Triangle), or click one: the ring is on\nyour cursor. An empty one is best.\n\n|cff888888Right-click here or wait 15 seconds to cancel.|r")
 		else
 			ui.capture:SetText("Press the button that opens this screen.\n\n|cff888888B, Esc or right-click cancels.|r")
 		end
@@ -727,7 +800,7 @@ function actions.rings(action)
 		local count = #PreviewSlices(key)
 		if key == "party" then
 			-- Rows are the buttons (or the one spell), not the group members.
-			count = ForeverRingsDB.partyHeals == "buttons" and 4 or 1
+			count = ns.PartySpellCount()
 		end
 		if action == "left" or action == "up" then
 			state.slot = Move(state.slot, -1, count)
@@ -741,7 +814,7 @@ function actions.rings(action)
 			end
 			state.mode, state.pickIndex = "pick", 1
 		elseif action == "x" and key == "party" then
-			if ns.PartySpell(ForeverRingsDB.partyHeals == "buttons" and state.slot or 1) then
+			if ns.PartySpell(math.min(state.slot, ns.PartySpellCount())) then
 				Try(ns.RemoveSlot(key, state.slot))
 			end
 		elseif action == "accept" and ns.IsEditable(key) then
@@ -989,6 +1062,10 @@ end
 -- Set key: the next action bar button pressed gets the ring. The menu's own
 -- buttons step aside so the game's bindings (and L2/R2 pages) work as usual.
 EndBarPick = function(message)
+	-- Still holding the ring's macro (nothing placed): let go of it.
+	if state.barPick and GetCursorInfo() == "macro" then
+		ClearCursor()
+	end
 	state.capture, state.barPick, state.barConfirm, state.barToken = nil, nil, nil, nil
 	Say(message)
 	ApplyBindings()
@@ -1001,6 +1078,11 @@ StartBarPick = function(key)
 	ui.frame:EnableKeyboard(false)
 	ui.frame:EnableGamePadButton(false)
 	ns.HookActionButtons()
+	-- Second way in: the ring's macro on the cursor. Clicking (or on some
+	-- clients pressing) an action button drops it there, and the bar change
+	-- tells us it landed (ns.OnActionBarChanged).
+	state.barPlaced = ns.RingOnBar(key)
+	ns.PickupRingMacro(key)
 	local token = {}
 	state.barToken = token
 	C_Timer.After(15, function()
@@ -1009,6 +1091,23 @@ StartBarPick = function(key)
 		end
 	end)
 	Render()
+end
+
+-- An action bar slot changed while Set key waits: if the ring's macro now
+-- sits somewhere new, the player dropped it there.
+function ns.OnActionBarChanged()
+	if state.capture ~= "bar" or not (ui and ui.frame:IsShown()) then
+		return
+	end
+	local slot = ns.RingOnBarExcept(state.barPick, state.barPlaced)
+	if slot then
+		local key = state.barPick
+		-- Only one copy: drop the old place.
+		if state.barPlaced and state.barPlaced ~= slot then
+			ns.RemoveRingFromSlot(key, state.barPlaced)
+		end
+		EndBarPick(ns.RingLabel(key) .. " is on that button now.")
+	end
 end
 
 -- Called (via hooks) whenever an action button is pressed.

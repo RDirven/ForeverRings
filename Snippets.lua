@@ -10,6 +10,12 @@ local _, ns = ...
 --   r:<ring>:u<i>       unit the action is used on (Party ring: party2...)
 --   r:<ring>:btn-a/x/y  spell for that face button, cast on the aimed unit
 --                       (Party ring with "spell per button")
+--   r:<ring>:hover      Hover cast: aim, then A/B/X/Y (or L2/R2 + them) each
+--                       cast their spell (btn-a, btn-l-a, btn-r-a...) and the
+--                       ring stays open; the ring button closes it
+--   r:<ring>:btnk-<id>  "action" when btn-<id> is an action bar slot, not a spell
+--   modlayer-<MODS>     "l" or "r": which trigger the client turns into that
+--                       modifier (GamePadEmulate*), e.g. modlayer-ALT- = "l"
 --   key-up/right/down/left, key-confirm, key-back   gamepad keys
 --   tap-repeat          tapping a ring button repeats its last action
 --   release-pick        letting go of the stick picks what it pointed at
@@ -17,6 +23,7 @@ local _, ns = ...
 --   active, sticky, depth, stack<d>, held-<dir>, moved, mx0/my0
 --   aim-dx/aim-dy       last stick direction, kept after the stick is let go
 --   held                the ring button is down (not set by an action bar click)
+--   layer-l / layer-r   L2 / R2 held (when they're plain buttons)
 --   last:<ring>:t / :v / :u   last action used from each ring
 
 ns.DEAD_ZONE = 40
@@ -33,9 +40,15 @@ for _, mod in ipairs({ "", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-
 		{ "key-confirm", "ForeverRingsConfirm" }, { "key-back", "ForeverRingsBack" },
 		{ "key-x", "ForeverRingsButtonX" }, { "key-y", "ForeverRingsButtonY" },
 	}) do
-		GRAB[#GRAB + 1] = ('		owner:SetBindingClick(true, "%s" .. owner:GetAttribute("%s"), "%s")'):format(mod, key[1], key[2])
+		-- The modifier travels along as the click's button ("mod-ALT-"), so
+		-- Hover cast can tell L2 + A from A.
+		GRAB[#GRAB + 1] = ('		owner:SetBindingClick(true, "%s" .. owner:GetAttribute("%s"), "%s", "%s")')
+			:format(mod, key[1], key[2], mod == "" and "LeftButton" or ("mod-" .. mod))
 	end
 end
+-- L2 / R2 as plain buttons: held state for Hover cast.
+GRAB[#GRAB + 1] = '		owner:SetBindingClick(true, "PADLTRIGGER", "ForeverRingsLayer_l")'
+GRAB[#GRAB + 1] = '		owner:SetBindingClick(true, "PADRTRIGGER", "ForeverRingsLayer_r")'
 
 -- Expects local `openKey`. Shows the ring and grabs the direction/confirm/back keys.
 local OPEN = [[
@@ -67,6 +80,8 @@ local CLOSE = [[
 	owner:SetAttribute("held", nil)
 	owner:SetAttribute("aim-dx", nil)
 	owner:SetAttribute("aim-dy", nil)
+	owner:SetAttribute("layer-l", nil)
+	owner:SetAttribute("layer-r", nil)
 ]]
 
 -- Expects `kind`, `value` and `unit` (may be nil). Loads the action into self; the secure click
@@ -170,8 +185,14 @@ local ACT = [[
 	local unit = owner:GetAttribute("r:" .. key .. ":u" .. pick)
 	-- A face button with its own spell casts that on the aimed person instead.
 	local buttonSpell = useButton and unit and owner:GetAttribute("r:" .. key .. ":btn-" .. useButton)
+	local hover = owner:GetAttribute("r:" .. key .. ":hover")
+	if hover and not buttonSpell then
+		return false
+	end
 	if buttonSpell then
-		kind, value = "spell", buttonSpell
+		-- "action": what's on that action bar button (Hover cast without an
+		-- own spell), cast on the aimed person.
+		kind, value = owner:GetAttribute("r:" .. key .. ":btnk-" .. useButton) or "spell", buttonSpell
 	end
 	if kind == "ring" then
 		local depth = (owner:GetAttribute("depth") or 0) + 1
@@ -184,7 +205,11 @@ local ACT = [[
 	end
 	local depth = owner:GetAttribute("depth") or 0
 	local root = depth > 0 and owner:GetAttribute("stack1") or key
+	-- Hover cast stays open after a heal with "Toggle" and "Hold"; with "Tap"
+	-- a heal closes it.
+	if not (hover and owner:GetAttribute("r:" .. key .. ":staysopen")) then
 ]] .. CLOSE .. [[
+	end
 	if not kind then
 		return false
 	end
@@ -194,6 +219,27 @@ local ACT = [[
 		owner:SetAttribute("last:" .. root .. ":v", value)
 	end
 ]] .. FIRE
+
+-- Hover cast: sets local `hover` for the open ring and, when it's on, turns
+-- `useButton` ("a") into its layer's id ("l-a" with L2, "r-a" with R2).
+local LAYER = [[
+	local hover = owner:GetAttribute("r:" .. (owner:GetAttribute("active") or "") .. ":hover")
+	if hover and useButton then
+		local layer = ""
+		if owner:GetAttribute("layer-l") then
+			layer = "l-"
+		elseif owner:GetAttribute("layer-r") then
+			layer = "r-"
+		end
+		if button and strsub(button, 1, 4) == "mod-" then
+			local fromMod = owner:GetAttribute("modlayer-" .. strsub(button, 5))
+			if fromMod then
+				layer = fromMod .. "-"
+			end
+		end
+		useButton = layer .. useButton
+	end
+]]
 
 -- B: one sub-ring back, or close.
 local BACK = [[
@@ -225,6 +271,10 @@ ns.snippets = {
 		end
 		owner:SetAttribute("held", nil)
 		self:SetAttribute("useOnKeyDown", true)
+		if owner:GetAttribute("r:" .. (owner:GetAttribute("active") or "") .. ":hover") then
+]] .. CLOSE .. [[
+			return false
+		end
 ]] .. PICK .. ACT .. [[
 		return
 	end
@@ -233,6 +283,13 @@ ns.snippets = {
 	end
 	owner:SetAttribute("held", nil)
 	self:SetAttribute("useOnKeyDown", false)
+	if owner:GetAttribute("r:" .. (owner:GetAttribute("active") or "") .. ":hover") then
+		-- Hover cast: letting go keeps it open, unless it's set to "hold".
+		if owner:GetAttribute("r:" .. (owner:GetAttribute("active") or "") .. ":holdclose") then
+]] .. CLOSE .. [[
+		end
+		return false
+	end
 ]] .. PICK .. [[
 	if not pick and owner:GetAttribute("tap-repeat") and not owner:GetAttribute("sticky") and not owner:GetAttribute("moved")
 		and not owner:GetAttribute("r:" .. key .. ":ct") then
@@ -253,7 +310,7 @@ ns.snippets = {
 	end
 	local closeIfNothing = false
 	local useButton = "a"
-]] .. PICK .. ACT,
+]] .. LAYER .. PICK .. ACT,
 
 	-- X / Y: only do something on rings that give them a spell (Party ring
 	-- with "spell per button"): cast it on whoever is aimed at.
@@ -263,8 +320,8 @@ ns.snippets = {
 	end
 	local closeIfNothing = false
 	local useButton = "x"
-]] .. PICK .. [[
-	if not pick or not owner:GetAttribute("r:" .. key .. ":btn-x") then
+]] .. LAYER .. PICK .. [[
+	if not pick or not owner:GetAttribute("r:" .. key .. ":btn-" .. useButton) then
 		return false
 	end
 ]] .. ACT,
@@ -275,8 +332,8 @@ ns.snippets = {
 	end
 	local closeIfNothing = false
 	local useButton = "y"
-]] .. PICK .. [[
-	if not pick or not owner:GetAttribute("r:" .. key .. ":btn-y") then
+]] .. LAYER .. PICK .. [[
+	if not pick or not owner:GetAttribute("r:" .. key .. ":btn-" .. useButton) then
 		return false
 	end
 ]] .. ACT,
@@ -285,6 +342,16 @@ ns.snippets = {
 	back = [[
 	if not down then
 		return false
+	end
+	local closeIfNothing = false
+	local useButton = "b"
+]] .. LAYER .. [[
+	if hover then
+]] .. PICK .. [[
+		if pick and owner:GetAttribute("r:" .. key .. ":btn-" .. useButton) then
+]] .. ACT .. [[
+			return
+		end
 	end
 ]] .. BACK,
 
@@ -298,7 +365,14 @@ ns.snippets = {
 ]] .. BACK .. [[
 	end
 	local closeIfNothing = false
+	local useButton = owner:GetAttribute("r:" .. (owner:GetAttribute("active") or "") .. ":hover") and "a" or nil
 ]] .. PICK .. ACT,
+
+	-- L2 / R2 held (plain buttons): which Hover cast layer A/B/X/Y use.
+	layer = [[
+	owner:SetAttribute("layer-" .. self:GetAttribute("layer"), down or nil)
+	return false
+]],
 
 	-- Stick/D-pad directions: diagonals are two held directions at once.
 	-- With release-pick on, letting go of the last held direction picks.
@@ -317,7 +391,8 @@ ns.snippets = {
 		owner:SetAttribute("aim-dy", dy)
 		return false
 	end
-	if not owner:IsShown() or not owner:GetAttribute("release-pick") then
+	if not owner:IsShown() or not owner:GetAttribute("release-pick")
+		or owner:GetAttribute("r:" .. (owner:GetAttribute("active") or "") .. ":hover") then
 		return false
 	end
 	if owner:GetAttribute("held-up") or owner:GetAttribute("held-right")

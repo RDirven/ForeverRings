@@ -824,21 +824,31 @@ Test("Party ring shows health, the lowest pulses red, range and death dim", func
 	g.Press("P", true)
 	for _ = 1, 20 do g.Update() end
 	local slots = g.ns.display.slots
-	Eq(slots[2].health:IsShown(), true, "health bar")
-	Eq(slots[2].health.value, 30, "tank at 30")
-	Eq(slots[2].health.max, 100, "of 100")
+	-- Rings lit from the crust inward: a band is full when value reaches its max.
+	local function Lit(slot)
+		local n = 0
+		for _, band in ipairs(slot.bands) do
+			if band.value >= band.max then n = n + 1 end
+		end
+		return n
+	end
+	Eq(#slots[2].bands, 12, "twelve health rings")
+	Eq(Lit(slots[2]), 4, "tank at 30%: the four outer rings")
+	Eq(slots[2].bands[1].value >= slots[2].bands[1].max, true, "the crust is lit")
+	Eq(slots[2].bands[12].value >= slots[2].bands[12].max, false, "the centre is empty")
+	Eq(Lit(slots[1]), 12, "you at full: every ring")
 	Eq(slots[2].label:GetText(), "Tank", "name under the slot")
 	Eq(slots[2].label.textColor[1], 0.78, "in class colour")
-	Eq(slots[2].rim.vertex[1], 1, "lowest pulses red")
-	Eq(slots[2].rim.vertex[2], 0.2, "red")
+	local wedges = g.ns.display.wedges
+	assert(wedges[2].bg.vertex[1] > 0.1 and wedges[2].bg.vertex[2] < 0.1, "lowest: the slice pulses red")
 	Eq(slots[3].outOfRange, true, "mage out of range")
 	assert(slots[3].alpha < 0.5, "out of range fades")
 	Eq(slots[4].icon.desaturated, true, "dead is grey")
 	world.group.party1.health = 100
 	world.group.party2.health = 50
 	g.Update()
-	Eq(slots[3].rim.vertex[2], 0.2, "now the mage is lowest")
-	Eq(slots[1].health:IsShown(), true, "you have a bar too")
+	assert(wedges[3].bg.vertex[1] > 0.1 and wedges[3].bg.vertex[2] < 0.1, "now the mage is lowest")
+	Eq(Lit(slots[3]), 6, "mage at 50%: six rings")
 end)
 
 Test("secret health values still fill the bar but nobody is called lowest", function()
@@ -847,13 +857,14 @@ Test("secret health values still fill the bar but nobody is called lowest", func
 	local secret = setmetatable({}, { __lt = function() error("secret") end, __div = function() error("secret") end })
 	world.group.party1.health = secret
 	g.env.issecretvalue = function(v) return v == secret end
+	g.env.UnitHealthPercent = function(unit) return unit == "party1" and secret or 1 end
 	g.Slash("bind party P")
 	g.Press("P", true)
 	g.Update()
 	local slots = g.ns.display.slots
-	Eq(slots[2].health.value, secret, "passed straight to the bar")
-	Eq(slots[2].rim.vertex[1], 1, "rim not red: can't compare")
-	Eq(slots[2].rim.vertex[2], 1, "plain rim")
+	Eq(slots[2].bands[1].value, secret, "secret percent passed straight to the rings")
+	local bg = g.ns.display.wedges[2].bg.vertex
+	Eq(bg[1], 0.05, "slice not red: can't compare")
 end)
 
 Test("joining a group refreshes the ring, but only after combat", function()
@@ -967,6 +978,239 @@ Test("in a raid: you plus your own subgroup, as raid units", function()
 	Eq(#party, 2, "you and your group mate")
 	Eq(party[1], "player", "you")
 	Eq(party[2], "raid2", "group 2 tank, not group 1")
+end)
+
+Test("secret cooldowns in combat (retail) don't break the ring", function()
+	local g = Login()
+	g.env.issecretvalue = function(v) return v == "secret" end
+	g.env.C_Spell.GetSpellCooldown = function() return { startTime = "secret", duration = "secret" } end
+	g.Slash("new heals")
+	g.ns.SetSlot("heals", 1, { kind = "spell", id = 3565 })
+	g.Slash("bind heals H")
+	g.Press("H", true)
+	g.Update()
+	g.ns.display:UpdateState()
+	Eq(g.ns.display.slots[1].cooldown.cd, nil, "secret cooldown not handed to the Cooldown")
+end)
+
+Test("Hover cast: aim, A/B/X/Y and L2/R2 + them each heal; the ring stays open", function()
+	local world = GroupWorld()
+	world.spells[139] = { name = "Renew", icon = 6002 }
+	world.spells[2060] = { name = "Greater Heal", icon = 6003 }
+	world.spells[17] = { name = "Power Word: Shield", icon = 6004 }
+	local g = Login(world)
+	g.ns.SetPartyHeals("hover")
+	Eq(g.ns.PartySpellCount(), 12, "twelve buttons")
+	g.ns.SetSlot("party", 1, { kind = "spell", id = 2061 })   -- A
+	g.ns.SetSlot("party", 2, { kind = "spell", id = 17 })     -- B
+	g.ns.SetSlot("party", 5, { kind = "spell", id = 139 })    -- L2 + A
+	g.ns.SetSlot("party", 9, { kind = "spell", id = 2060 })   -- R2 + A
+	local h = g.env.ForeverRingsHeader
+	g.ns.SetPartyOpen("hold")
+	g.Slash("bind party P")
+	g.Press("P", true)                      -- held from here on
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("PADRSTICKRIGHT", false)
+	Eq(#g.casts, 0, "letting go of the stick doesn't cast")
+	g.Press("PAD1", true)
+	Eq(g.casts[1].value, 2061, "A: Flash Heal")
+	Eq(g.casts[1].unit, "party1", "on the tank")
+	Eq(h:IsShown(), true, "still open")
+	g.Press("PAD2", true)
+	Eq(g.casts[2].value, 17, "B: Shield, not back")
+	g.Press("PADLTRIGGER", true)
+	g.Press("PAD1", true)
+	Eq(g.casts[3].value, 139, "L2 + A: Renew")
+	g.Press("PADLTRIGGER", false)
+	g.Press("PADRTRIGGER", true)
+	g.Press("PAD1", true)
+	Eq(g.casts[4].value, 2060, "R2 + A: Greater Heal")
+	g.Press("PADRTRIGGER", false)
+	g.Press("PAD3", true)
+	Eq(#g.casts, 4, "X without a spell does nothing")
+	Eq(h:IsShown(), true, "and keeps the ring open")
+	g.Press("P", false)
+	Eq(h:IsShown(), false, "letting go closes it")
+end)
+
+Test("Hover cast, Tap: a heal casts and closes the ring", function()
+	local g = Login(GroupWorld())
+	g.ns.SetPartyHeals("hover")
+	g.ns.SetSlot("party", 1, { kind = "spell", id = 2061 })
+	local h = g.env.ForeverRingsHeader
+	g.Slash("bind party P")
+	g.Press("P", true)
+	g.Press("P", false)
+	Eq(h:IsShown(), true, "a tap opens it")
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("PAD1", true)
+	Eq(g.casts[1].value, 2061, "healed")
+	Eq(h:IsShown(), false, "and closed")
+end)
+
+Test("Hover cast with L2 as an emulated modifier (Alt): ALT-PAD1 is L2 + A", function()
+	local world = GroupWorld()
+	world.spells[139] = { name = "Renew", icon = 6002 }
+	local g = WoW.New(world)
+	g.cvars.GamePadEmulateAlt = "PADLTRIGGER"
+	g.Login()
+	g.ns.SetPartyHeals("hover")
+	g.ns.SetSlot("party", 1, { kind = "spell", id = 2061 })
+	g.ns.SetSlot("party", 5, { kind = "spell", id = 139 })
+	g.Slash("bind party P")
+	g.Press("P", true)
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("ALT-PAD1", true)
+	Eq(g.casts[1] and g.casts[1].value, 139, "Renew")
+	g.Press("P", true)                      -- Tap closed it: open again
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("PAD1", true)
+	Eq(g.casts[2] and g.casts[2].value, 2061, "plain A: Flash Heal")
+end)
+
+Test("Ring opacity: everything see-through except the slot you aim at", function()
+	local g = Login()
+	g.ns.SetOpacity(0.2)
+	g.Slash("bind main F")
+	g.Press("F", true)
+	for _ = 1, 30 do g.Update() end
+	local d = g.ns.display
+	Eq(d.backdrop.alpha, 0.2, "backdrop")
+	assert(d.slots[1].alpha <= 0.2 + 1e-6, "slots at 20% with nothing aimed")
+	g.Press("PADRSTICKUP", true)
+	for _ = 1, 30 do g.Update() end
+	assert(d.slots[1].alpha > 0.9, "the aimed slot stays solid")
+	assert(d.slots[3].alpha < 0.2, "the rest fades")
+end)
+
+Test("Hover cast takes the action bar's spells when you haven't picked any", function()
+	local world = GroupWorld()
+	local g = WoW.New(world)
+	g.cvars.GamePadEmulateAlt = "PADLTRIGGER"
+	g.bindings.PAD1 = "ACTIONBUTTON1"
+	g.bindings["ALT-PAD1"] = "MULTIACTIONBAR1BUTTON2"
+	g.Login()
+	g.env.CreateFrame("CheckButton", "MultiBarBottomLeftButton2", g.env.UIParent).action = 62
+	g.actions[1] = { "spell", 2061 }
+	g.actions[62] = { "spell", 139 }
+	g.ns.SetPartyHeals("hover")
+	local h = g.env.ForeverRingsHeader
+	Eq(h:GetAttribute("r:party:btn-a"), 1, "A: action slot 1")
+	Eq(h:GetAttribute("r:party:btnk-a"), "action", "as an action")
+	Eq(h:GetAttribute("r:party:btn-l-a"), 62, "L2 + A: the Alt binding's slot")
+	g.Slash("bind party P")
+	g.Press("P", true)
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("PAD1", true)
+	Eq(g.casts[1].type, "action", "uses the action bar button")
+	Eq(g.casts[1].value, 1, "slot 1")
+	Eq(g.casts[1].unit, "party1", "on the tank")
+	g.ns.SetSlot("party", 1, { kind = "spell", id = 2061 })
+	Eq(h:GetAttribute("r:party:btnk-a"), nil, "an own spell wins")
+end)
+
+Test("Hover cast, Hold: letting go of the ring button closes it", function()
+	local g = Login(GroupWorld())
+	g.ns.SetPartyHeals("hover")
+	g.ns.SetPartyOpen("hold")
+	g.Slash("bind party P")
+	g.Press("P", true)
+	Eq(g.env.ForeverRingsHeader:IsShown(), true, "open while held")
+	g.Press("P", false)
+	Eq(g.env.ForeverRingsHeader:IsShown(), false, "closed on release")
+end)
+
+Test("Party ring: dispellable debuffs under the name, no circles", function()
+	local world = GroupWorld()
+	local g = WoW.New(world)
+	g.env.C_UnitAuras = { GetAuraDataByIndex = function(unit, index, filter)
+		if unit == "party1" and index == 1 and filter == "HARMFUL|RAID" then
+			return { icon = 136066 }
+		end
+	end }
+	g.Login()
+	g.Slash("bind party P")
+	g.Press("P", true)
+	for _ = 1, 5 do g.Update() end
+	local slots = g.ns.display.slots
+	Eq(slots[2].debuffs[1]:IsShown(), true, "the tank's debuff")
+	Eq(slots[2].debuffs[1]:GetTexture(), 136066, "its icon")
+	Eq(slots[2].debuffs[2]:IsShown(), false, "just one")
+	Eq(slots[1].debuffs[1]:IsShown(), false, "you have none")
+	Eq(slots[2].rim:IsShown(), false, "no circle around the name")
+end)
+
+Test("Party ring: your HoT shows a green circle and its icon", function()
+	local world = GroupWorld()
+	local g = WoW.New(world)
+	g.env.C_UnitAuras = { GetAuraDataByIndex = function(unit, index, filter)
+		if unit == "party1" and index == 1 and filter == "HELPFUL|PLAYER" then
+			return { icon = 135953 }
+		end
+	end }
+	g.Login()
+	g.Slash("bind party P")
+	g.Press("P", true)
+	for _ = 1, 5 do g.Update() end
+	local slots = g.ns.display.slots
+	Eq(slots[2].rim:IsShown(), true, "circle on the tank")
+	Eq(slots[2].rim.vertex[2], 1, "green")
+	Eq(slots[2].hots[1]:GetTexture(), 135953, "the HoT's icon")
+	Eq(slots[1].rim:IsShown(), false, "no HoT on you")
+	Eq(slots[2].cooldown:IsShown(), false, "no cooldown swipe on people")
+end)
+
+Test("Your buffs: long ones (Blessing of the Bronze) and hidden ones don't show", function()
+	local world = GroupWorld()
+	local g = WoW.New(world)
+	local auras = {
+		{ name = "Blessing of the Bronze", icon = 1, duration = 3600 },
+		{ name = "Reversion", icon = 2, duration = 12 },
+		{ name = "Echo", icon = 3, duration = 15 },
+	}
+	g.env.C_UnitAuras = { GetAuraDataByIndex = function(unit, index, filter)
+		if unit == "party1" and filter == "HELPFUL|PLAYER" then return auras[index] end
+	end }
+	g.Login()
+	g.Slash("bind party P")
+	g.Press("P", true)
+	for _ = 1, 5 do g.Update() end
+	local hots = g.ns.display.slots[2].hots
+	Eq(hots[1]:GetTexture(), 2, "Reversion first: Bronze is skipped")
+	Eq(hots[2]:GetTexture(), 3, "then Echo")
+	g.Slash("hidebuff echo")
+	g.ns.display.auraAge = 1
+	g.Update()
+	Eq(hots[2]:IsShown(), false, "Echo hidden")
+	g.ns.SetPartyBuffs("all")
+	g.ns.display.auraAge = 1
+	g.Update()
+	Eq(hots[1]:GetTexture(), 1, "All: Bronze shows")
+end)
+
+Test("Hover cast, Toggle: stays open after a heal, the button closes it", function()
+	local g = Login(GroupWorld())
+	g.ns.SetPartyHeals("hover")
+	g.ns.SetPartyOpen("toggle")
+	g.ns.SetSlot("party", 1, { kind = "spell", id = 2061 })
+	local h = g.env.ForeverRingsHeader
+	g.Slash("bind party P")
+	g.Press("P", true)
+	g.Press("P", false)
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("PAD1", true)
+	Eq(g.casts[1].value, 2061, "healed")
+	Eq(h:IsShown(), true, "still open")
+	g.Press("P", true)
+	Eq(h:IsShown(), false, "pressed again: closed")
+end)
+
+Test("Health fills from the centre: other ring textures", function()
+	local g = Login(GroupWorld())
+	g.ns.SetPartyFill("centre")
+	g.Slash("bind party P")
+	g.Press("P", true)
+	Has(g.ns.display.slots[2].bands[1].ringMask:GetTexture(), "ringc1", "centre rings")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

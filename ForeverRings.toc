@@ -1,4 +1,4 @@
-## Interface: 16001
+## Interface: 16001, 120105, 120107
 ## Title: Forever Rings
 ## Notes: Controller-first radial rings for WoW Forever. Food, usable items and mounts fill themselves from your bags.
 ## Author: Robert-Jan

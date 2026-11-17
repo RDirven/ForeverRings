@@ -195,6 +195,15 @@ function M.New(world)
 	function Frame:GetValue() return self.value end
 	function Frame:SetStatusBarTexture(tex) self.barTexture = tex end
 	function Frame:SetStatusBarColor(r, g, b) self.barColor = { r, g, b } end
+	function Frame:SetOrientation(o) self.orientation = o end
+	function Frame:GetMinMaxValues() return self.min, self.max end
+	function Frame:GetValue() return self.value end
+	function Frame:GetFrameLevel() return self.level or 1 end
+	function Frame:SetFrameLevel(l) self.level = l end
+	function Frame:GetStatusBarTexture()
+		self.barTex = self.barTex or NewRegion("Texture", self)
+		return self.barTex
+	end
 	function Frame:SetSwipeTexture(tex) self.swipe = tex end
 	function Frame:SetCooldown(start, duration) self.cd = { start, duration } end
 	function Frame:Clear() self.cd = nil end
@@ -205,9 +214,9 @@ function M.New(world)
 	function Frame:HighlightText() self.highlighted = true end
 	function Frame:SetFocus() self.focused = true end
 	function Frame:ClearFocus() self.focused = false end
-	function Frame:SetBindingClick(_, key, buttonName)
+	function Frame:SetBindingClick(_, key, buttonName, button)
 		Blocked(self, "SetBindingClick")
-		self.overrides[key] = { name = buttonName }
+		self.overrides[key] = { name = buttonName, button = button }
 	end
 	function Frame:ClearBindings()
 		Blocked(self, "ClearBindings")
@@ -240,7 +249,7 @@ function M.New(world)
 		local wrap = frame.wraps.OnClick
 		local result
 		if wrap then
-			setfenv(wrap.fn, { owner = wrap.header, math = math })
+			setfenv(wrap.fn, { owner = wrap.header, math = math, strsub = string.sub })
 			game.inSecure = true
 			local ok, err = pcall(function() result = wrap.fn(frame, button or "LeftButton", down) end)
 			game.inSecure = false
@@ -460,6 +469,7 @@ function M.New(world)
 		end,
 		PickupMacro = function(index) game.cursorInfo = { "macro", index } end,
 		HasAction = function(slot) return game.actions[slot] ~= nil end,
+		GetBindingAction = function(key) return game.bindings[key] or "" end,
 		SetRaidTarget = function(unit, index) game.marks[unit] = index ~= 0 and index or nil end,
 		GetRaidTargetIndex = function(unit) return game.marks[unit] end,
 		-- Only when a test asks for it: otherwise the addon falls back to bars 1-6.

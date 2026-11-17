@@ -26,7 +26,7 @@ local function Run(name, self, down, button)
 		assert(fn, err)
 		compiled[name] = fn
 	end
-	setfenv(compiled[name], { owner = header, math = math })
+	setfenv(compiled[name], { owner = header, math = math, strsub = string.sub })
 	return compiled[name](self, button or "LeftButton", down)
 end
 
