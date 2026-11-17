@@ -110,6 +110,17 @@ local function CreateSlot(parent)
 	slot.count = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 	slot.count:SetPoint("BOTTOMRIGHT", -2, 2)
 
+	-- Party ring: health bar and name under the slot.
+	slot.health = CreateFrame("StatusBar", nil, slot)
+	slot.health:SetSize(ICON_SIZE + 8, 5)
+	slot.health:SetPoint("TOP", slot, "BOTTOM", 0, -4)
+	slot.health:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+	slot.healthBg = slot.health:CreateTexture(nil, "BACKGROUND")
+	slot.healthBg:SetAllPoints()
+	slot.healthBg:SetColorTexture(0, 0, 0, 0.7)
+	slot.label = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	slot.label:SetPoint("TOP", slot.health, "BOTTOM", 0, -2)
+
 	-- Marks slots that open another ring.
 	slot.more = slot:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	slot.more:SetPoint("TOPRIGHT", 4, 4)
@@ -369,6 +380,13 @@ function Display:Render(key)
 		slot.icon2:SetTexture(slice.icon2)
 		slot.icon2:SetShown(slice.icon2 ~= nil)
 		slot.more:SetShown(slice.type == "ring")
+		slot.health:SetShown(slice.unit ~= nil)
+		slot.label:SetShown(slice.unit ~= nil)
+		if slice.unit then
+			local r, g, b = ns.ClassColor(slice.unit)
+			slot.label:SetText(slice.name)
+			slot.label:SetTextColor(r, g, b)
+		end
 		slot.halo:SetVertexColor(color[1], color[2], color[3])
 		slot.ping:SetVertexColor(color[1], color[2], color[3])
 		STYLES[style](slot, color)
@@ -488,6 +506,48 @@ local function PlaceOnCircle(region, frame, angle, radius)
 	region:SetPoint("CENTER", frame, "CENTER", math.sin(rad) * radius, math.cos(rad) * radius)
 end
 
+-- A plain number we may do maths on. In combat the client can hand addons
+-- "secret" health values: those still go to the health bar as they are, but
+-- we can't compare them.
+local function Plain(v)
+	return type(v) == "number" and not (issecretvalue and issecretvalue(v))
+end
+
+-- Health bars, death and range for the Party ring, every frame. Returns the
+-- slot of whoever is lowest (below 80%), when the client lets us know that.
+function Display:UpdateGroup()
+	local lowest, lowestFraction
+	for i, slice in ipairs(self.slices) do
+		local unit, slot = slice.unit, self.slots[i]
+		if unit then
+			local health, maxHealth = UnitHealth(unit), UnitHealthMax(unit)
+			slot.health:SetMinMaxValues(0, maxHealth)
+			slot.health:SetValue(health)
+			local okDead, dead = pcall(function() return UnitIsDeadOrGhost(unit) == true end)
+			dead = okDead and dead
+			slot.icon:SetDesaturated(dead)
+			local fraction = Plain(health) and Plain(maxHealth) and maxHealth > 0 and health / maxHealth or nil
+			if fraction then
+				slot.health:SetStatusBarColor(1 - fraction, 0.3 + 0.6 * fraction, 0.15)
+				if not dead and fraction < 0.8 and (not lowestFraction or fraction < lowestFraction) then
+					lowest, lowestFraction = i, fraction
+				end
+			else
+				slot.health:SetStatusBarColor(ns.ClassColor(unit))
+			end
+			-- UnitInRange can't tell for yourself or when it couldn't check.
+			local okRange, outOfRange = pcall(function()
+				local inRange, checked = UnitInRange(unit)
+				return checked == true and inRange == false
+			end)
+			slot.outOfRange = okRange and outOfRange
+		else
+			slot.outOfRange = nil
+		end
+	end
+	return lowest
+end
+
 function Display:Animate(elapsed)
 	self.time = self.time + elapsed
 	self.openAge = self.openAge + elapsed
@@ -517,6 +577,7 @@ function Display:Animate(elapsed)
 	local clean = ForeverRingsDB.style ~= "classic"
 	local pulse = 0.75 + 0.25 * math.sin(self.time * 5)
 	local color = self.color or COLORS.clean
+	local lowest = self:UpdateGroup()
 	for i = 1, #self.slices do
 		local slot = self.slots[i]
 		local on = i == selected
@@ -525,13 +586,18 @@ function Display:Animate(elapsed)
 		PlaceOnCircle(slot, self.frame, slot.angle, RADIUS * (0.5 + 0.5 * p))
 		slot.scale = Approach(slot.scale, on and SELECT_SCALE or 1, elapsed, 14)
 		slot:SetScale(math.max(0.01, slot.scale * (0.5 + 0.5 * p)))
-		-- With something selected, the rest steps back a little.
-		slot:SetAlpha(Clamp(p) * ((selected and not on) and 0.65 or 1))
+		-- With something selected, the rest steps back a little; group members
+		-- out of range fade further.
+		slot:SetAlpha(Clamp(p) * ((selected and not on) and 0.65 or 1) * (slot.outOfRange and 0.45 or 1))
 		slot.halo:SetAlpha(on and pulse or 0)
 		slot.glow:SetAlpha(not clean and on and pulse or 0)
 		if on then
 			slot.rim:SetVertexColor(color[1], color[2], color[3])
 			slot.rim:SetAlpha(1)
+		elseif i == lowest then
+			-- Whoever needs healing most pulses red.
+			slot.rim:SetVertexColor(1, 0.2, 0.2)
+			slot.rim:SetAlpha(0.6 + 0.4 * math.sin(self.time * 6))
 		else
 			slot.rim:SetVertexColor(1, 1, 1)
 			slot.rim:SetAlpha(0.3)
@@ -563,7 +629,15 @@ function Display:Animate(elapsed)
 	if #self.slices == 0 then
 		self.title:SetText(ns.RingLabel(self.key) .. "\n|cff999999(empty)|r")
 	elseif selected then
-		self.title:SetText(self.slices[selected].name or "")
+		local slice = self.slices[selected]
+		if slice.unit then
+			-- Who, in class colour, and what lands on them.
+			local r, g, b = ns.ClassColor(slice.unit)
+			local action = slice.type == "spell" and C_Spell.GetSpellName(slice.value) or "Target"
+			self.title:SetText(("|cff%02x%02x%02x%s|r\n|cff999999%s|r"):format(r * 255, g * 255, b * 255, slice.name or "", action or ""))
+		else
+			self.title:SetText(slice.name or "")
+		end
 	else
 		local auto = ns.autoRings[self.key]
 		local center = auto and auto.center

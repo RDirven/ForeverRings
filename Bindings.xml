@@ -5,6 +5,7 @@
 	<Binding name="CLICK ForeverRingsTrigger_mount:LeftButton" category="ADDONS"/>
 	<Binding name="CLICK ForeverRingsTrigger_quest:LeftButton" category="ADDONS"/>
 	<Binding name="CLICK ForeverRingsTrigger_markers:LeftButton" category="ADDONS"/>
+	<Binding name="CLICK ForeverRingsTrigger_party:LeftButton" category="ADDONS"/>
 	<Binding name="CLICK ForeverRingsTrigger_tools:LeftButton" category="ADDONS"/>
 	<Binding name="FOREVERRINGS_CONFIG" category="ADDONS">
 		ForeverRings_ToggleConfig()

@@ -34,6 +34,9 @@ function M.New(world)
 		cooldowns = world.cooldowns or {}, -- [spellID or itemID] = { start, duration }
 		unusable = world.unusable or {}, -- [spellID or itemID] = true | "power"
 		optionsPages = {},
+		-- [unit] = { name, class, health, max, dead, inRange }. You're always there.
+		group = world.group or { player = { name = "Me", class = "PRIEST", health = 100, max = 100 } },
+		raid = world.raid,           -- list of { unit, name, subgroup } when in a raid
 		inCombat = false,
 		inSecure = false,
 		bindings = {},
@@ -186,6 +189,12 @@ function M.New(world)
 	-- Restricted-environment handle methods (the mock uses frames as handles).
 	-- Cooldown
 	function Frame:SetDrawEdge() end
+	-- StatusBar
+	function Frame:SetMinMaxValues(min, max) self.min, self.max = min, max end
+	function Frame:SetValue(v) self.value = v end
+	function Frame:GetValue() return self.value end
+	function Frame:SetStatusBarTexture(tex) self.barTexture = tex end
+	function Frame:SetStatusBarColor(r, g, b) self.barColor = { r, g, b } end
 	function Frame:SetSwipeTexture(tex) self.swipe = tex end
 	function Frame:SetCooldown(start, duration) self.cd = { start, duration } end
 	function Frame:Clear() self.cd = nil end
@@ -254,7 +263,7 @@ function M.New(world)
 					value = type(result) == "string" and frame.attrs["clickbutton-" .. result] or frame.attrs.clickbutton
 					value:Click()
 				end
-				table.insert(game.casts, { type = kind, value = value })
+				table.insert(game.casts, { type = kind, value = value, unit = frame.attrs.unit })
 			end
 		end
 	end
@@ -499,6 +508,34 @@ function M.New(world)
 			RegisterAddOnCategory = function(category) table.insert(game.optionsPages, category) end,
 		},
 		HideUIPanel = function(frame) frame:Hide() end,
+		UnitExists = function(unit) return game.group[unit] ~= nil end,
+		UnitName = function(unit) return game.group[unit] and game.group[unit].name end,
+		UnitClass = function(unit)
+			local m = game.group[unit]
+			return m and m.class, m and m.class
+		end,
+		UnitIsUnit = function(a, b) return game.group[a] ~= nil and game.group[a] == game.group[b] end,
+		UnitHealth = function(unit) return game.group[unit] and game.group[unit].health or 0 end,
+		UnitHealthMax = function(unit) return game.group[unit] and game.group[unit].max or 0 end,
+		UnitIsDeadOrGhost = function(unit) return game.group[unit] and game.group[unit].dead or false end,
+		UnitInRange = function(unit)
+			local m = game.group[unit]
+			if not m or unit == "player" then
+				return false, false
+			end
+			return m.inRange ~= false, true
+		end,
+		IsInRaid = function() return game.raid ~= nil end,
+		GetRaidRosterInfo = function(i)
+			local r = game.raid and game.raid[i]
+			if r then
+				return r.name, 0, r.subgroup
+			end
+		end,
+		RAID_CLASS_COLORS = {
+			PRIEST = { r = 1, g = 1, b = 1 }, WARRIOR = { r = 0.78, g = 0.61, b = 0.43 },
+			MAGE = { r = 0.25, g = 0.78, b = 0.92 }, ROGUE = { r = 1, g = 0.96, b = 0.41 },
+		},
 		print = function(...)
 			local parts = {}
 			for i = 1, select("#", ...) do

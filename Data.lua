@@ -304,6 +304,15 @@ ns.autoRings = {
 			return Truncate(ns.AvailableMenus())
 		end,
 	},
+	-- You and your group. Aim at someone and release: your Party spell lands on
+	-- them without changing your target. No spell set: it targets them.
+	-- Raids show your own group of five.
+	party = {
+		label = "Party",
+		build = function()
+			return ns.PartySlices()
+		end,
+	},
 	-- Favorites first; all usable mounts when nothing is favorited.
 	mount = {
 		label = "Mounts",
@@ -325,6 +334,62 @@ ns.autoRings = {
 	},
 }
 
+-- Party ring ------------------------------------------------------------------
+
+-- You first (top), then your party. In a raid, the members of your own
+-- subgroup: raid units, so heals still land on the right people.
+local function GroupUnits()
+	local units = { "player" }
+	if IsInRaid and IsInRaid() then
+		local myGroup
+		for i = 1, 40 do
+			local name, _, subgroup = GetRaidRosterInfo(i)
+			if name and UnitIsUnit("raid" .. i, "player") then
+				myGroup = subgroup
+			end
+		end
+		for i = 1, 40 do
+			local name, _, subgroup = GetRaidRosterInfo(i)
+			if name and subgroup == myGroup and not UnitIsUnit("raid" .. i, "player") then
+				units[#units + 1] = "raid" .. i
+			end
+		end
+	else
+		for i = 1, 4 do
+			if UnitExists("party" .. i) then
+				units[#units + 1] = "party" .. i
+			end
+		end
+	end
+	return units
+end
+
+function ns.ClassColor(unit)
+	local _, class = UnitClass(unit)
+	local color = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+	if color then
+		return color.r, color.g, color.b
+	end
+	return 1, 1, 1
+end
+
+function ns.PartySlices()
+	local spell = ForeverRingsDB.partySpell
+	local slices = {}
+	for _, unit in ipairs(GroupUnits()) do
+		local _, class = UnitClass(unit)
+		slices[#slices + 1] = {
+			type = spell and "spell" or "target",
+			value = spell or unit,
+			unit = unit,
+			name = UnitName(unit) or unit,
+			icon = class and ("Interface\\Icons\\ClassIcon_" .. class:sub(1, 1) .. class:sub(2):lower())
+				or "Interface\\Icons\\INV_Misc_QuestionMark",
+		}
+	end
+	return Truncate(slices)
+end
+
 -- Every ring has its own icon, so empty rings and rings that start with a
 -- sub-ring still show something. Your own rings use their first action.
 local RING_ICONS = {
@@ -336,6 +401,7 @@ local RING_ICONS = {
 	mount = "Interface\\Icons\\Ability_Mount_RidingHorse",
 	tools = "Interface\\Icons\\Trade_BlackSmithing",
 	menu = "Interface\\Icons\\INV_Misc_Book_11",
+	party = "Interface\\Icons\\Spell_Holy_PrayerOfHealing02",
 }
 local DEFAULT_RING_ICON = "Interface\\Icons\\INV_Jewelry_Ring_15"
 

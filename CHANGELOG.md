@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- **Party ring, for healers on a controller.** You (on top) and your group in a circle, each with a health bar and their name in class colour. Aim at someone and release: your heal lands on them **without changing your target**. Works in combat.
+  - Pick the heal in the settings screen: open the Party ring, press A and choose from Spells. X clears it; without a spell, the ring targets whoever you aim at.
+  - Whoever needs healing most (below 80%) pulses red. Members out of range fade, dead ones turn grey.
+  - Tap the ring's button to heal the same person again.
+  - In a raid it shows your own group of five.
+  - Joining or leaving a group updates the ring after combat.
+
 ## 0.5.4
 
 - Fixed: menus with a micro menu button (Character, Spellbook, Talents, Quest log, Group finder...) didn't open from a ring. They're now a secure click on that button.

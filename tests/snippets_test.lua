@@ -35,6 +35,7 @@ local function Ring(key, slices)
 	for i, s in ipairs(slices) do
 		header.attrs["r:" .. key .. ":t" .. i] = s[1]
 		header.attrs["r:" .. key .. ":v" .. i] = s[2]
+		header.attrs["r:" .. key .. ":u" .. i] = s[3]
 	end
 end
 
@@ -374,6 +375,53 @@ Test("macro slices load their text into macrotext", function()
 	Run("trigger", t, false)
 	Eq(t.attrs.type, "macro", "type")
 	Eq(t.attrs.macrotext, "/use item:1\n/use item:2", "macrotext")
+end)
+
+Test("party slices cast on the aimed group member", function()
+	header.attrs["tap-repeat"] = true
+	Ring("party", { { "spell", 2061, "player" }, { "spell", 2061, "party1" }, { "spell", 2061, "party2" } })
+	local t = Handle({ ring = "party" })
+	Run("trigger", t, true)
+	Dir("right", true)
+	Eq(Run("trigger", t, false), nil, "fires")
+	Dir("right", false)
+	Eq(t.attrs.type, "spell", "spell")
+	Eq(t.attrs.spell, 2061, "heal")
+	Eq(t.attrs.unit, "party1", "on party1")
+	Eq(header.attrs["last:party:u"], "party1", "remembered")
+	t.attrs.unit = nil
+	Run("trigger", t, true)
+	Run("trigger", t, false)
+	Eq(t.attrs.unit, "party1", "tap heals the same member again")
+end)
+
+Test("targeting-only party slices target the member", function()
+	Ring("party", { { "target", "party3", "party3" } })
+	local t = Handle({ ring = "party" })
+	Run("trigger", t, true)
+	Dir("up", true)
+	Run("trigger", t, false)
+	Eq(t.attrs.type, "target", "target")
+	Eq(t.attrs.unit, "party3", "party3")
+end)
+
+Test("a normal slice after a party slice no longer carries a unit", function()
+	Ring("party", { { "spell", 2061, "party1" } })
+	Ring("food", { { "item", "item:1" } })
+	local p, f = Handle({ ring = "party" }), Handle({ ring = "food" })
+	Run("trigger", p, true)
+	Dir("up", true)
+	Run("trigger", p, false)
+	Dir("up", false)
+	p.attrs.unit = "party1"
+	Run("trigger", p, true)
+	Dir("up", true)
+	Run("trigger", p, false)
+	Dir("up", false)
+	Run("trigger", f, true)
+	Dir("up", true)
+	Run("trigger", f, false)
+	Eq(f.attrs.unit, nil, "no unit on the food button")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

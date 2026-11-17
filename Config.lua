@@ -497,6 +497,13 @@ local function RenderRings()
 		ui.listTitle:SetText(ns.RingLabel(key))
 		RenderList(items, state.slot)
 		RenderPreview(key, state.slot)
+		if key == "party" then
+			local spell = ForeverRingsDB.partySpell
+			ui.info:SetText(spell
+				and ("Aim at someone and release: |cffffffff" .. (C_Spell.GetSpellName(spell) or "?") .. "|r lands on them,\nwithout changing your target.")
+				or "No spell yet: aiming at someone targets them.\nPress A to pick the heal it should cast.")
+			return SetHint("A choose spell" .. (spell and "   X clear spell" or "") .. "   B back")
+		end
 		if ns.IsEditable(key) then
 			if state.confirmClear == state.slot then
 				ui.info:SetText("")
@@ -696,6 +703,15 @@ function actions.rings(action)
 			state.slot = Move(state.slot, -1, count)
 		elseif action == "right" or action == "down" then
 			state.slot = Move(state.slot, 1, count)
+		elseif action == "accept" and key == "party" then
+			for i, picker in ipairs(PICKERS) do
+				if picker.label == "Spells" then
+					state.pickCategory = i
+				end
+			end
+			state.mode, state.pickIndex = "pick", 1
+		elseif action == "x" and key == "party" and ForeverRingsDB.partySpell then
+			Try(ns.RemoveSlot(key, 1))
 		elseif action == "accept" and ns.IsEditable(key) then
 			state.mode, state.pickIndex = "pick", 1
 		elseif action == "y" and ns.IsEditable(key) and key ~= "main" then

@@ -757,5 +757,131 @@ Test("Character from a ring: a secure click on the micro button, no taint", func
 	Eq(g.env.CharacterMicroButton.clicked, 1, "character opened")
 end)
 
+-- Party ring ------------------------------------------------------------------
+
+local function GroupWorld()
+	local world = World()
+	world.spells[2061] = { name = "Flash Heal", icon = 6001 }
+	world.group = {
+		player = { name = "Me", class = "PRIEST", health = 100, max = 100 },
+		party1 = { name = "Tank", class = "WARRIOR", health = 30, max = 100 },
+		party2 = { name = "Zap", class = "MAGE", health = 90, max = 100, inRange = false },
+		party3 = { name = "Stab", class = "ROGUE", health = 0, max = 100, dead = true },
+	}
+	return world
+end
+
+Test("Party ring: you on top, then your group; without a spell it targets", function()
+	local g = Login(GroupWorld())
+	local h = g.env.ForeverRingsHeader
+	local party = Ring(g, "party")
+	Eq(#party, 4, "you plus three")
+	Eq(party[1], "player", "you first")
+	Eq(h:GetAttribute("r:party:t2"), "target", "targets")
+	Eq(h:GetAttribute("r:party:u2"), "party1", "unit")
+	Eq(g.ns.resolved.party[2].name, "Tank", "name")
+	Has(g.ns.resolved.party[2].icon, "ClassIcon_Warrior", "class icon")
+	g.Slash("bind party P")
+	g.Press("P", true)
+	g.Press("PADRSTICKRIGHT", true)
+	g.Press("P", false)
+	Eq(g.casts[1].type, "target", "targeted")
+	Eq(g.casts[1].unit, "party1", "the tank")
+end)
+
+Test("Party spell: the heal lands on whoever you aim at, in combat too", function()
+	local g = Login(GroupWorld())
+	Eq(g.ns.SetSlot("party", 1, { kind = "spell", id = 2061 }), true, "spell set")
+	local h = g.env.ForeverRingsHeader
+	Eq(h:GetAttribute("r:party:t3"), "spell", "casts")
+	Eq(h:GetAttribute("r:party:v3"), 2061, "Flash Heal")
+	Eq(h:GetAttribute("r:party:u3"), "party2", "on party2")
+	g.Slash("bind party P")
+	g.SetCombat(true)
+	g.Press("P", true)
+	g.Press("PADRSTICKRIGHT", true)
+	g.Update()
+	Has(g.ns.display.title:GetText(), "Tank", "who")
+	Has(g.ns.display.title:GetText(), "Flash Heal", "what")
+	g.Press("P", false)
+	g.Press("PADRSTICKRIGHT", false)
+	Eq(g.casts[1].value, 2061, "heal")
+	Eq(g.casts[1].unit, "party1", "on the tank")
+	g.Press("P", true)
+	g.Press("P", false)
+	Eq(g.casts[2] and g.casts[2].unit, "party1", "tap heals the tank again")
+	g.SetCombat(false)
+	local spell = g.ns.RemoveSlot("party", 1)
+	Eq(spell and spell.id, 2061, "cleared")
+	Eq(h:GetAttribute("r:party:t1"), "target", "back to targeting")
+	Has(select(2, g.ns.SetSlot("party", 1, { kind = "item", id = 6948 })), "one spell", "only spells")
+end)
+
+Test("Party ring shows health, the lowest pulses red, range and death dim", function()
+	local world = GroupWorld()
+	local g = Login(world)
+	g.Slash("bind party P")
+	g.Press("P", true)
+	for _ = 1, 20 do g.Update() end
+	local slots = g.ns.display.slots
+	Eq(slots[2].health:IsShown(), true, "health bar")
+	Eq(slots[2].health.value, 30, "tank at 30")
+	Eq(slots[2].health.max, 100, "of 100")
+	Eq(slots[2].label:GetText(), "Tank", "name under the slot")
+	Eq(slots[2].label.textColor[1], 0.78, "in class colour")
+	Eq(slots[2].rim.vertex[1], 1, "lowest pulses red")
+	Eq(slots[2].rim.vertex[2], 0.2, "red")
+	Eq(slots[3].outOfRange, true, "mage out of range")
+	assert(slots[3].alpha < 0.5, "out of range fades")
+	Eq(slots[4].icon.desaturated, true, "dead is grey")
+	world.group.party1.health = 100
+	world.group.party2.health = 50
+	g.Update()
+	Eq(slots[3].rim.vertex[2], 0.2, "now the mage is lowest")
+	Eq(slots[1].health:IsShown(), true, "you have a bar too")
+end)
+
+Test("secret health values still fill the bar but nobody is called lowest", function()
+	local world = GroupWorld()
+	local g = Login(world)
+	local secret = setmetatable({}, { __lt = function() error("secret") end, __div = function() error("secret") end })
+	world.group.party1.health = secret
+	g.env.issecretvalue = function(v) return v == secret end
+	g.Slash("bind party P")
+	g.Press("P", true)
+	g.Update()
+	local slots = g.ns.display.slots
+	Eq(slots[2].health.value, secret, "passed straight to the bar")
+	Eq(slots[2].rim.vertex[1], 1, "rim not red: can't compare")
+	Eq(slots[2].rim.vertex[2], 1, "plain rim")
+end)
+
+Test("joining a group refreshes the ring, but only after combat", function()
+	local world = GroupWorld()
+	local g = Login(world)
+	g.SetCombat(true)
+	world.group.party4 = { name = "Late", class = "MAGE", health = 100, max = 100 }
+	g.Fire("GROUP_ROSTER_UPDATE")
+	g.RunTimers()
+	Eq(#Ring(g, "party"), 4, "unchanged in combat")
+	g.SetCombat(false)
+	Eq(#Ring(g, "party"), 5, "added after combat")
+end)
+
+Test("in a raid: you plus your own subgroup, as raid units", function()
+	local world = GroupWorld()
+	world.group = {
+		player = { name = "Me", class = "PRIEST", health = 100, max = 100 },
+		raid1 = { name = "Other", class = "MAGE", health = 100, max = 100 },
+		raid2 = { name = "Tank", class = "WARRIOR", health = 100, max = 100 },
+	}
+	world.group.raid3 = world.group.player
+	world.raid = { { name = "Other", subgroup = 1 }, { name = "Tank", subgroup = 2 }, { name = "Me", subgroup = 2 } }
+	local party = Ring(Login(world), "party")
+	Eq(#party, 2, "you and your group mate")
+	Eq(party[1], "player", "you")
+	Eq(party[2], "raid2", "group 2 tank, not group 1")
+end)
+
 print(("%d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

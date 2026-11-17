@@ -8,6 +8,7 @@ _G["BINDING_NAME_CLICK ForeverRingsTrigger_bag:LeftButton"] = "Bag ring (usable 
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_mount:LeftButton"] = "Mount ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_quest:LeftButton"] = "Quest items ring"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_markers:LeftButton"] = "Target markers ring"
+_G["BINDING_NAME_CLICK ForeverRingsTrigger_party:LeftButton"] = "Party ring (heal or target your group)"
 _G["BINDING_NAME_CLICK ForeverRingsTrigger_tools:LeftButton"] = "Tools ring"
 
 local INPUTS = {
@@ -207,6 +208,7 @@ local function RefreshAll()
 			local slice = slices[i]
 			header:SetAttribute(prefix .. "t" .. i, slice and slice.type)
 			header:SetAttribute(prefix .. "v" .. i, slice and slice.value)
+			header:SetAttribute(prefix .. "u" .. i, slice and slice.unit)
 		end
 		header:SetAttribute(prefix .. "n", #slices)
 		local center = ns.autoRings[key] and ns.autoRings[key].center
@@ -266,6 +268,8 @@ events:SetScript("OnEvent", function(_, event)
 		events:RegisterEvent("NEW_MOUNT_ADDED")
 		events:RegisterEvent("NEW_TOY_ADDED")
 		events:RegisterEvent("UPDATE_MACROS")
+		events:RegisterEvent("GROUP_ROSTER_UPDATE")
+		events:RegisterEvent("UNIT_NAME_UPDATE")
 		RefreshAll()
 		-- First time: open the settings screen so controller players never
 		-- have to type anything.
@@ -296,7 +300,7 @@ end)
 -- changes secure state, so it returns nil plus a message when in combat.
 
 local COMBAT = "Can't change rings in combat."
-local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, quest = 5, markers = 6, menu = 7, tools = 8 }
+local BUILTIN_ORDER = { main = 1, food = 2, mount = 3, bag = 4, quest = 5, markers = 6, party = 7, menu = 8, tools = 9 }
 
 -- main, the auto rings, tools, then custom rings alphabetically.
 function ns.RingKeys()
@@ -393,9 +397,27 @@ function ns.DeleteRing(key)
 	return true
 end
 
+-- The Party ring has one setting instead of slots: the spell it casts on
+-- whoever you aim at. Setting a "slot" sets that spell; clearing it makes the
+-- ring target instead.
+function ns.SetPartySpell(spellID)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.partySpell = spellID
+	RefreshAll()
+	return true
+end
+
 -- Replaces slot `index`, or appends when index is one past the end.
 function ns.SetSlot(key, index, entry)
 	local ring = ForeverRingsDB.rings[key]
+	if key == "party" then
+		if entry.kind ~= "spell" then
+			return nil, "The Party ring casts one spell on whoever you aim at: pick it from Spells."
+		end
+		return ns.SetPartySpell(entry.id)
+	end
 	if InCombatLockdown() then
 		return nil, COMBAT
 	elseif not ring then
@@ -412,6 +434,14 @@ end
 
 function ns.RemoveSlot(key, index)
 	local ring = ForeverRingsDB.rings[key]
+	if key == "party" then
+		local spell = ForeverRingsDB.partySpell
+		if not spell then
+			return nil, "The Party ring has no spell set."
+		end
+		local ok, err = ns.SetPartySpell(nil)
+		return ok and { kind = "spell", id = spell }, err
+	end
 	if InCombatLockdown() then
 		return nil, COMBAT
 	elseif not (ring and ring.slots[index]) then

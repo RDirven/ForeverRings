@@ -7,6 +7,7 @@ local _, ns = ...
 --   r:<ring>:n          number of slices
 --   r:<ring>:t<i>       "item" | "toy" | "spell" | "macro" | "ring"
 --   r:<ring>:v<i>       action value, or the sub-ring key for "ring"
+--   r:<ring>:u<i>       unit the action is used on (Party ring: party2...)
 --   key-up/right/down/left, key-confirm, key-back   gamepad keys
 --   tap-repeat          tapping a ring button repeats its last action
 --   release-pick        letting go of the stick picks what it pointed at
@@ -14,7 +15,7 @@ local _, ns = ...
 --   active, sticky, depth, stack<d>, held-<dir>, moved, mx0/my0
 --   aim-dx/aim-dy       last stick direction, kept after the stick is let go
 --   held                the ring button is down (not set by an action bar click)
---   last:<ring>:t / last:<ring>:v   last action used from each ring
+--   last:<ring>:t / :v / :u   last action used from each ring
 
 ns.DEAD_ZONE = 40
 ns.MOVE_ZONE = 8
@@ -65,7 +66,7 @@ local CLOSE = [[
 	owner:SetAttribute("aim-dy", nil)
 ]]
 
--- Expects `kind` and `value`. Loads the action into self; the secure click
+-- Expects `kind`, `value` and `unit` (may be nil). Loads the action into self; the secure click
 -- that follows performs it. Macros keep their text in "macrotext".
 -- No macros for the addon's own actions: a macro can't start another macro,
 -- so they'd do nothing from an action bar button. And Blizzard panels and
@@ -98,6 +99,10 @@ local FIRE = [[
 		self:SetAttribute("type", kind)
 		self:SetAttribute("typerelease", kind)
 		self:SetAttribute(kind == "macro" and "macrotext" or kind, value)
+	end
+	-- Cast on (or target) a group member without changing your target first.
+	if unit then
+		self:SetAttribute("unit", unit)
 	end
 ]]
 
@@ -146,6 +151,7 @@ local ACT = [[
 	if not pick and owner:GetAttribute("r:" .. key .. ":ct") then
 		local kind = owner:GetAttribute("r:" .. key .. ":ct")
 		local value = owner:GetAttribute("r:" .. key .. ":cv")
+		local unit = nil
 ]] .. CLOSE .. FIRE .. [[
 		return
 	end
@@ -157,6 +163,7 @@ local ACT = [[
 	end
 	local kind = owner:GetAttribute("r:" .. key .. ":t" .. pick)
 	local value = owner:GetAttribute("r:" .. key .. ":v" .. pick)
+	local unit = owner:GetAttribute("r:" .. key .. ":u" .. pick)
 	if kind == "ring" then
 		local depth = (owner:GetAttribute("depth") or 0) + 1
 		owner:SetAttribute("depth", depth)
@@ -174,6 +181,7 @@ local ACT = [[
 	end
 	if value ~= "settings" then
 		owner:SetAttribute("last:" .. root .. ":t", kind)
+		owner:SetAttribute("last:" .. root .. ":u", unit)
 		owner:SetAttribute("last:" .. root .. ":v", value)
 	end
 ]] .. FIRE
@@ -221,6 +229,7 @@ ns.snippets = {
 		and not owner:GetAttribute("r:" .. key .. ":ct") then
 		local kind = owner:GetAttribute("last:" .. key .. ":t")
 		local value = owner:GetAttribute("last:" .. key .. ":v")
+		local unit = owner:GetAttribute("last:" .. key .. ":u")
 		if kind then
 ]] .. CLOSE .. FIRE .. [[
 			return
