@@ -8,6 +8,8 @@
   - Tap the ring's button to heal the same person again.
   - In a raid it shows your own group of five.
   - Joining or leaving a group updates the ring after combat.
+  - **Party heals** (Settings): *One spell*, or *Spell per button*: release, A, X and Y each cast their own heal on whoever you aim at. Aim at the tank, press X for the big heal, Y for the HoT.
+  - **Party order** (Settings): *Group order*, or *By role*: you on top, the tank always right, a healer left and DPS below, in five fixed places so nobody moves when the group changes.
 
 ## 0.5.4
 

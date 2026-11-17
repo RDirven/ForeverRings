@@ -45,6 +45,7 @@ local function Setup()
 		["key-up"] = "PADRSTICKUP", ["key-right"] = "PADRSTICKRIGHT",
 		["key-down"] = "PADRSTICKDOWN", ["key-left"] = "PADRSTICKLEFT",
 		["key-confirm"] = "PAD1", ["key-back"] = "PAD2",
+		["key-x"] = "PAD3", ["key-y"] = "PAD4",
 	})
 	Ring("main", { { "ring", "food" }, { "spell", 111 }, { "ring", "mount" }, { "item", "item:6948" } })
 	Ring("food", {

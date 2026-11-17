@@ -373,19 +373,62 @@ function ns.ClassColor(unit)
 	return 1, 1, 1
 end
 
+local function IsTank(unit)
+	if UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) == "TANK" then
+		return true
+	end
+	return GetPartyAssignment ~= nil and GetPartyAssignment("MAINTANK", unit) == true
+end
+
+local function IsHealer(unit)
+	return UnitGroupRolesAssigned ~= nil and UnitGroupRolesAssigned(unit) == "HEALER"
+end
+
+-- "By role": always five places, so everyone keeps their direction however
+-- big the group is. You on top, the tank right, DPS below, a healer left.
+-- Places without anyone stay empty (false).
+local function RoleOrder(units)
+	local tanks, healers, rest = {}, {}, {}
+	for i = 2, #units do
+		local unit = units[i]
+		table.insert(IsTank(unit) and tanks or IsHealer(unit) and healers or rest, unit)
+	end
+	local places = { units[1], table.remove(tanks, 1) or false, false, false, table.remove(healers, 1) or false }
+	local leftover = {}
+	for _, list in ipairs({ rest, tanks, healers }) do
+		for _, unit in ipairs(list) do
+			leftover[#leftover + 1] = unit
+		end
+	end
+	for _, place in ipairs({ 3, 4, 2, 5 }) do
+		if not places[place] then
+			places[place] = table.remove(leftover, 1) or false
+		end
+	end
+	return places
+end
+
 function ns.PartySlices()
 	local spell = ForeverRingsDB.partySpell
 	local slices = {}
-	for _, unit in ipairs(GroupUnits()) do
-		local _, class = UnitClass(unit)
-		slices[#slices + 1] = {
-			type = spell and "spell" or "target",
-			value = spell or unit,
-			unit = unit,
-			name = UnitName(unit) or unit,
-			icon = class and ("Interface\\Icons\\ClassIcon_" .. class:sub(1, 1) .. class:sub(2):lower())
-				or "Interface\\Icons\\INV_Misc_QuestionMark",
-		}
+	local units = GroupUnits()
+	if ForeverRingsDB.partyOrder == "role" then
+		units = RoleOrder(units)
+	end
+	for _, unit in ipairs(units) do
+		if not unit then
+			slices[#slices + 1] = { name = "Empty", icon = "Interface\\Icons\\INV_Misc_QuestionMark", empty = true }
+		else
+			local _, class = UnitClass(unit)
+			slices[#slices + 1] = {
+				type = spell and "spell" or "target",
+				value = spell or unit,
+				unit = unit,
+				name = UnitName(unit) or unit,
+				icon = class and ("Interface\\Icons\\ClassIcon_" .. class:sub(1, 1) .. class:sub(2):lower())
+					or "Interface\\Icons\\INV_Misc_QuestionMark",
+			}
+		end
 	end
 	return Truncate(slices)
 end

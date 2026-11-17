@@ -526,6 +526,10 @@ function M.New(world)
 			return m.inRange ~= false, true
 		end,
 		IsInRaid = function() return game.raid ~= nil end,
+		UnitGroupRolesAssigned = function(unit) return game.group[unit] and game.group[unit].role or "NONE" end,
+		GetPartyAssignment = function(kind, unit)
+			return kind == "MAINTANK" and game.group[unit] ~= nil and game.group[unit].mainTank == true
+		end,
 		GetRaidRosterInfo = function(i)
 			local r = game.raid and game.raid[i]
 			if r then

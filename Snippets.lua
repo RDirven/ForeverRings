@@ -8,6 +8,8 @@ local _, ns = ...
 --   r:<ring>:t<i>       "item" | "toy" | "spell" | "macro" | "ring"
 --   r:<ring>:v<i>       action value, or the sub-ring key for "ring"
 --   r:<ring>:u<i>       unit the action is used on (Party ring: party2...)
+--   r:<ring>:btn-a/x/y  spell for that face button, cast on the aimed unit
+--                       (Party ring with "spell per button")
 --   key-up/right/down/left, key-confirm, key-back   gamepad keys
 --   tap-repeat          tapping a ring button repeats its last action
 --   release-pick        letting go of the stick picks what it pointed at
@@ -29,6 +31,7 @@ for _, mod in ipairs({ "", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-
 		{ "key-up", "ForeverRingsDir_up" }, { "key-right", "ForeverRingsDir_right" },
 		{ "key-down", "ForeverRingsDir_down" }, { "key-left", "ForeverRingsDir_left" },
 		{ "key-confirm", "ForeverRingsConfirm" }, { "key-back", "ForeverRingsBack" },
+		{ "key-x", "ForeverRingsButtonX" }, { "key-y", "ForeverRingsButtonY" },
 	}) do
 		GRAB[#GRAB + 1] = ('		owner:SetBindingClick(true, "%s" .. owner:GetAttribute("%s"), "%s")'):format(mod, key[1], key[2])
 	end
@@ -143,7 +146,8 @@ local PICK = ([[
 	end
 ]]):format(ns.MOVE_ZONE * ns.MOVE_ZONE, ns.DEAD_ZONE * ns.DEAD_ZONE)
 
--- Expects `key`, `pick`, `closeIfNothing`. Enters a sub-ring, or fires the
+-- Expects `key`, `pick`, `closeIfNothing` and `useButton` ("a", "x", "y" or
+-- nil). Enters a sub-ring, or fires the
 -- action and remembers it as the last one used from the ring that was opened.
 -- A ring can have an action in its middle (Markers: clear): used when nothing
 -- is aimed at.
@@ -164,6 +168,11 @@ local ACT = [[
 	local kind = owner:GetAttribute("r:" .. key .. ":t" .. pick)
 	local value = owner:GetAttribute("r:" .. key .. ":v" .. pick)
 	local unit = owner:GetAttribute("r:" .. key .. ":u" .. pick)
+	-- A face button with its own spell casts that on the aimed person instead.
+	local buttonSpell = useButton and unit and owner:GetAttribute("r:" .. key .. ":btn-" .. useButton)
+	if buttonSpell then
+		kind, value = "spell", buttonSpell
+	end
 	if kind == "ring" then
 		local depth = (owner:GetAttribute("depth") or 0) + 1
 		owner:SetAttribute("depth", depth)
@@ -243,7 +252,34 @@ ns.snippets = {
 		return false
 	end
 	local closeIfNothing = false
+	local useButton = "a"
 ]] .. PICK .. ACT,
+
+	-- X / Y: only do something on rings that give them a spell (Party ring
+	-- with "spell per button"): cast it on whoever is aimed at.
+	buttonx = [[
+	if not down or not owner:IsShown() then
+		return false
+	end
+	local closeIfNothing = false
+	local useButton = "x"
+]] .. PICK .. [[
+	if not pick or not owner:GetAttribute("r:" .. key .. ":btn-x") then
+		return false
+	end
+]] .. ACT,
+
+	buttony = [[
+	if not down or not owner:IsShown() then
+		return false
+	end
+	local closeIfNothing = false
+	local useButton = "y"
+]] .. PICK .. [[
+	if not pick or not owner:GetAttribute("r:" .. key .. ":btn-y") then
+		return false
+	end
+]] .. ACT,
 
 	-- B: one sub-ring back, or close.
 	back = [[

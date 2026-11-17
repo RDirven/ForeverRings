@@ -36,6 +36,9 @@ local DEFAULTS = {
 	vibration = true,
 	scale = 1,
 	welcomed = false,
+	partyHeals = "one",   -- "one": one spell | "buttons": release, A, X and Y each a spell
+	partyOrder = "group", -- "group": group order | "role": tank right, healer left, DPS below
+	partyButtons = {},    -- [a|x|y] = spellID
 	last = {},
 	binds = {},         -- [ring] = key, applied as priority override bindings
 	rings = {
@@ -119,6 +122,8 @@ local function ApplyInput()
 	end
 	header:SetAttribute("key-confirm", ForeverRingsDB.confirm)
 	header:SetAttribute("key-back", ForeverRingsDB.back)
+	header:SetAttribute("key-x", "PAD3")
+	header:SetAttribute("key-y", "PAD4")
 	header:SetAttribute("tap-repeat", ForeverRingsDB.tapRepeat or nil)
 	header:SetAttribute("release-pick", ForeverRingsDB.releasePick or nil)
 end
@@ -145,6 +150,8 @@ local function CreateHeader()
 	end
 	SecureButton("ForeverRingsConfirm", ns.snippets.confirm, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
 	SecureButton("ForeverRingsBack", ns.snippets.back, { "AnyDown" })
+	SecureButton("ForeverRingsButtonX", ns.snippets.buttonx, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
+	SecureButton("ForeverRingsButtonY", ns.snippets.buttony, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
 	-- Covers the screen while a ring is open, so the mouse can pick too.
 	local mouse = SecureButton("ForeverRingsMouse", ns.snippets.mouse, { "LeftButtonDown", "RightButtonDown" }, header)
 	mouse:ClearAllPoints()
@@ -214,6 +221,11 @@ local function RefreshAll()
 		local center = ns.autoRings[key] and ns.autoRings[key].center
 		header:SetAttribute(prefix .. "ct", center and center.type or nil)
 		header:SetAttribute(prefix .. "cv", center and center.value or nil)
+		-- Party ring with "spell per button": A, X and Y cast their own spell.
+		local buttons = key == "party" and ForeverRingsDB.partyHeals == "buttons" and ForeverRingsDB.partyButtons or {}
+		for _, b in ipairs({ "a", "x", "y" }) do
+			header:SetAttribute(prefix .. "btn-" .. b, buttons[b])
+		end
 		lastCounts[key] = #slices
 	end
 	for key in pairs(lastCounts) do
@@ -400,11 +412,45 @@ end
 -- The Party ring has one setting instead of slots: the spell it casts on
 -- whoever you aim at. Setting a "slot" sets that spell; clearing it makes the
 -- ring target instead.
-function ns.SetPartySpell(spellID)
+-- With "spell per button", the Party ring has four spells: 1 = on release,
+-- 2 = A, 3 = X, 4 = Y. Otherwise only the first.
+ns.PARTY_BUTTONS = { "release", "a", "x", "y" }
+
+function ns.PartySpell(index)
+	if index == 1 then
+		return ForeverRingsDB.partySpell
+	end
+	return ForeverRingsDB.partyButtons[ns.PARTY_BUTTONS[index]]
+end
+
+function ns.SetPartySpell(spellID, index)
 	if InCombatLockdown() then
 		return nil, COMBAT
 	end
-	ForeverRingsDB.partySpell = spellID
+	index = index or 1
+	if index == 1 then
+		ForeverRingsDB.partySpell = spellID
+	else
+		ForeverRingsDB.partyButtons[ns.PARTY_BUTTONS[index]] = spellID
+	end
+	RefreshAll()
+	return true
+end
+
+function ns.SetPartyHeals(mode)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.partyHeals = mode
+	RefreshAll()
+	return true
+end
+
+function ns.SetPartyOrder(order)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.partyOrder = order
 	RefreshAll()
 	return true
 end
@@ -414,9 +460,9 @@ function ns.SetSlot(key, index, entry)
 	local ring = ForeverRingsDB.rings[key]
 	if key == "party" then
 		if entry.kind ~= "spell" then
-			return nil, "The Party ring casts one spell on whoever you aim at: pick it from Spells."
+			return nil, "The Party ring casts spells on whoever you aim at: pick one from Spells."
 		end
-		return ns.SetPartySpell(entry.id)
+		return ns.SetPartySpell(entry.id, ForeverRingsDB.partyHeals == "buttons" and math.min(index, 4) or 1)
 	end
 	if InCombatLockdown() then
 		return nil, COMBAT
@@ -435,11 +481,12 @@ end
 function ns.RemoveSlot(key, index)
 	local ring = ForeverRingsDB.rings[key]
 	if key == "party" then
-		local spell = ForeverRingsDB.partySpell
+		index = ForeverRingsDB.partyHeals == "buttons" and math.min(index, 4) or 1
+		local spell = ns.PartySpell(index)
 		if not spell then
-			return nil, "The Party ring has no spell set."
+			return nil, "No spell set there."
 		end
-		local ok, err = ns.SetPartySpell(nil)
+		local ok, err = ns.SetPartySpell(nil, index)
 		return ok and { kind = "spell", id = spell }, err
 	end
 	if InCombatLockdown() then

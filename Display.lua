@@ -380,6 +380,7 @@ function Display:Render(key)
 		slot.icon2:SetTexture(slice.icon2)
 		slot.icon2:SetShown(slice.icon2 ~= nil)
 		slot.more:SetShown(slice.type == "ring")
+		slot.icon:SetAlpha(slice.empty and 0.25 or 1)
 		slot.health:SetShown(slice.unit ~= nil)
 		slot.label:SetShown(slice.unit ~= nil)
 		if slice.unit then
@@ -427,6 +428,17 @@ function Display:UpdateHint()
 	local header = self.header
 	local depth = header:GetAttribute("depth") or 0
 	local parts = { "A / click select", depth > 0 and "B / right-click back" or "B / right-click close" }
+	-- Party ring with a spell per button: say which button heals with what.
+	if self.key == "party" and ForeverRingsDB.partyHeals == "buttons" then
+		parts = {}
+		for index, label in ipairs({ "Release", "A", "X", "Y" }) do
+			local spell = ns.PartySpell(index)
+			if spell then
+				parts[#parts + 1] = label .. " " .. (C_Spell.GetSpellName(spell) or "?")
+			end
+		end
+		parts[#parts + 1] = "B close"
+	end
 	if depth == 0 and ForeverRingsDB.tapRepeat and not header:GetAttribute("sticky") then
 		local name = ActionName(header:GetAttribute("last:" .. self.key .. ":t"), header:GetAttribute("last:" .. self.key .. ":v"))
 		if name then

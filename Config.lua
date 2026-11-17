@@ -271,6 +271,18 @@ local SETTINGS = {
 		accept = "capture",
 	},
 	{
+		label = "Party heals",
+		value = function() return ForeverRingsDB.partyHeals == "buttons" and "Spell per button" or "One spell" end,
+		help = "One spell: aim at someone and release to cast it.\nSpell per button: release, A, X and Y each cast\ntheir own heal on whoever you aim at.",
+		change = function() return ns.SetPartyHeals(ForeverRingsDB.partyHeals == "buttons" and "one" or "buttons") end,
+	},
+	{
+		label = "Party order",
+		value = function() return ForeverRingsDB.partyOrder == "role" and "By role" or "Group order" end,
+		help = "By role: you on top, the tank always right, a\nhealer left and DPS below, so they never move.\nGroup order: everyone in the order of your group.",
+		change = function() return ns.SetPartyOrder(ForeverRingsDB.partyOrder == "role" and "group" or "role") end,
+	},
+	{
 		label = "Main ring",
 		value = function() return state.confirmReset and "|cffff5555Press again|r" or "Reset" end,
 		help = "Puts Main back to its default slots: Food, Mounts,\nBag, Quest, Markers, Tools, Menu and Settings.",
@@ -498,6 +510,20 @@ local function RenderRings()
 		RenderList(items, state.slot)
 		RenderPreview(key, state.slot)
 		if key == "party" then
+			if ForeverRingsDB.partyHeals == "buttons" then
+				-- One row per button, each with its own spell.
+				state.slot = math.min(state.slot, 4)
+				local rows = {}
+				for i, label in ipairs({ "Release", "A", "X", "Y" }) do
+					local spell = ns.PartySpell(i)
+					rows[i] = { text = label .. ":  " .. (spell and (C_Spell.GetSpellName(spell) or "?") or "|cff888888none|r"),
+						icon = spell and C_Spell.GetSpellTexture(spell) or false }
+				end
+				ui.listTitle:SetText("Party  |cff888888>  heal per button|r")
+				RenderList(rows, state.slot)
+				ui.info:SetText("Aim at someone, then release or press A, X or Y:\nthat button's spell lands on them, without\nchanging your target. Release without a spell targets.")
+				return SetHint("Up/Down button   A choose spell" .. (ns.PartySpell(state.slot) and "   X clear" or "") .. "   B back")
+			end
 			local spell = ForeverRingsDB.partySpell
 			ui.info:SetText(spell
 				and ("Aim at someone and release: |cffffffff" .. (C_Spell.GetSpellName(spell) or "?") .. "|r lands on them,\nwithout changing your target.")
@@ -699,6 +725,10 @@ function actions.rings(action)
 			state.confirmClear = nil
 		end
 		local count = #PreviewSlices(key)
+		if key == "party" then
+			-- Rows are the buttons (or the one spell), not the group members.
+			count = ForeverRingsDB.partyHeals == "buttons" and 4 or 1
+		end
 		if action == "left" or action == "up" then
 			state.slot = Move(state.slot, -1, count)
 		elseif action == "right" or action == "down" then
@@ -710,8 +740,10 @@ function actions.rings(action)
 				end
 			end
 			state.mode, state.pickIndex = "pick", 1
-		elseif action == "x" and key == "party" and ForeverRingsDB.partySpell then
-			Try(ns.RemoveSlot(key, 1))
+		elseif action == "x" and key == "party" then
+			if ns.PartySpell(ForeverRingsDB.partyHeals == "buttons" and state.slot or 1) then
+				Try(ns.RemoveSlot(key, state.slot))
+			end
 		elseif action == "accept" and ns.IsEditable(key) then
 			state.mode, state.pickIndex = "pick", 1
 		elseif action == "y" and ns.IsEditable(key) and key ~= "main" then
