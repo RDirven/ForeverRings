@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- Fixed (hopefully for good): some sessions the controller couldn't aim in rings until a /reload, while the mouse worked. The ring now also reads the aiming stick itself, so out of combat it aims even when the client doesn't deliver the stick's direction buttons; release the ring button or press A to pick. (In combat the game only allows the secure path.)
+- New `/frings debug`: open a ring, move the stick, close it, then type it. It shows whether the stick and its direction buttons reach the addon. Please paste the result in a comment if the controller still doesn't aim.
+- The ring learns which way is up from your stick, for clients that report it the other way round.
+
 ## 0.6.0
 
 - **Hover cast** (Settings > Party heals): open the Party ring, aim at someone and press A, B, X or Y, or hold L2 or R2 with them: twelve heals, each landing on whoever you aim at without changing your target. The ring stays open so you can keep healing; its button closes it. Works whether L2/R2 are plain buttons or set as Alt/Shift/Ctrl.

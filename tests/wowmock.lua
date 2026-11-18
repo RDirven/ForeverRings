@@ -329,6 +329,15 @@ function M.New(world)
 		end
 	end
 
+	-- Moves a stick: reaches frames that took the sticks (EnableGamePadStick).
+	function game.Stick(stick, x, y)
+		for _, f in ipairs(game.frames) do
+			if f.shown and f.sticks and f.scripts.OnGamePadStick then
+				f.scripts.OnGamePadStick(f, stick, x, y, math.sqrt(x * x + y * y))
+			end
+		end
+	end
+
 	function game.Fire(event, ...)
 		for _, f in ipairs(game.frames) do
 			if f.events[event] and f.scripts.OnEvent then

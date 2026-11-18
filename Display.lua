@@ -258,13 +258,45 @@ local FREELOOK = "freelook"
 -- ring's bindings.
 local stickEater
 
+-- What the client is (and isn't) sending, for /frings debug.
+ns.diag = { opens = 0, stickEvents = 0, dirPresses = 0, fallbackAims = 0 }
+
+-- Which stick names count as the aiming stick.
+local AIM_STICKS = {
+	rstick = { Right = true, Camera = true, Look = true },
+	lstick = { Left = true, Movement = true, Move = true },
+}
+
+-- Backup for the stick direction buttons. Some sessions the client doesn't
+-- deliver PADRSTICKUP and friends to the ring until a /reload, while the
+-- stick itself still reaches this frame. Out of combat we then write the aim
+-- ourselves, so aiming works and releasing the ring button (or A) picks.
+-- In combat only the secure bindings may change the ring.
+local function OnStick(_, stick, x, y)
+	local header = ns.header
+	local wanted = AIM_STICKS[ForeverRingsDB.input]
+	if not (header and header:IsShown() and wanted and wanted[stick] and x and y) then
+		return
+	end
+	ns.diag.stickEvents = ns.diag.stickEvents + 1
+	ns.lastStickY = y
+	if InCombatLockdown() or x * x + y * y < 0.25 then
+		-- Let go: keep the last aim, like the secure code does.
+		return
+	end
+	ns.diag.fallbackAims = ns.diag.fallbackAims + 1
+	header:SetAttribute("aim-dx", x)
+	header:SetAttribute("aim-dy", y * (ForeverRingsDB.stickYSign or 1))
+	header:SetAttribute("moved", true)
+end
+
 local function EatSticks(on)
 	if not stickEater then
 		stickEater = CreateFrame("Frame", nil, UIParent)
 		if not stickEater.EnableGamePadStick then
 			return
 		end
-		stickEater:SetScript("OnGamePadStick", function() end)
+		stickEater:SetScript("OnGamePadStick", OnStick)
 	end
 	if stickEater.EnableGamePadStick then
 		pcall(stickEater.EnableGamePadStick, stickEater, on)
@@ -368,8 +400,23 @@ function ns.CreateDisplay(header)
 	self.flash = CreateFlash()
 
 	frame:SetScript("OnUpdate", function(_, elapsed) self:Animate(elapsed or 0) end)
-	frame:SetScript("OnShow", ns.FreezeCamera)
+	frame:SetScript("OnShow", function()
+		ns.diag.opens = ns.diag.opens + 1
+		ns.FreezeCamera()
+	end)
 	frame:SetScript("OnHide", ns.ThawCamera)
+	header:HookScript("OnAttributeChanged", function(_, name, value)
+		if value and name:sub(1, 5) == "held-" and name ~= "held-" then
+			ns.diag.dirPresses = ns.diag.dirPresses + 1
+			-- Learn which way is up from a real direction press, in case the
+			-- client reports stick y the other way round.
+			local y = ns.lastStickY
+			if y and math.abs(y) > 0.5 and (name == "held-up" or name == "held-down") then
+				local up = (name == "held-up") == (y > 0)
+				ForeverRingsDB.stickYSign = up and 1 or -1
+			end
+		end
+	end)
 	header:HookScript("OnAttributeChanged", function(_, name, value)
 		if name == "active" and value then
 			self:Render(value)

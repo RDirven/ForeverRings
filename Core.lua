@@ -149,6 +149,7 @@ end
 
 local function CreateHeader()
 	header = CreateFrame("Frame", "ForeverRingsHeader", UIParent, "SecureHandlerBaseTemplate")
+	ns.header = header
 	header:SetAllPoints(UIParent)
 	header:SetFrameStrata("DIALOG")
 	header:EnableMouse(false)
@@ -1216,6 +1217,31 @@ end
 
 function commands.partydebug()
 	ns.PartyDebug()
+end
+
+-- For bug reports: what the client sends while a ring is open.
+-- Open a ring, move the aiming stick around, close it, then /frings debug.
+function commands.debug()
+	local d = ns.diag
+	local function cvar(name)
+		return tostring(GetCVar and GetCVar(name))
+	end
+	Print(("Version %s  ·  aim %s  ·  hold camera %s"):format(
+		tostring(C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata("ForeverRings", "Version")),
+		tostring(ForeverRingsDB.input), tostring(ForeverRingsDB.holdCamera)))
+	Print(("GamePadEnable %s  ·  GamePadStickAxisButtons %s  ·  stick y %s"):format(
+		cvar("GamePadEnable"), cvar("GamePadStickAxisButtons"), tostring(ForeverRingsDB.stickYSign or 1)))
+	Print(("Rings opened %d  ·  stick seen %d  ·  direction presses %d  ·  backup aims %d"):format(
+		d.opens, d.stickEvents, d.dirPresses, d.fallbackAims))
+	if d.opens == 0 then
+		Print("Open a ring and move the aiming stick first, then run this again.")
+	elseif d.stickEvents > 0 and d.dirPresses == 0 then
+		Print("The stick reaches the addon, but its direction buttons don't: the backup aims out of combat. Please send this to the author.")
+	elseif d.stickEvents == 0 and d.dirPresses == 0 then
+		Print("No stick input reached the ring at all. Is 'Hold camera still' on, and the controller active?")
+	else
+		Print("Stick and direction buttons both arrive.")
+	end
 end
 
 function commands.config()
