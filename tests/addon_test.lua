@@ -1213,6 +1213,103 @@ Test("Health fills from the centre: other ring textures", function()
 	Has(g.ns.display.slots[2].bands[1].ringMask:GetTexture(), "ringc1", "centre rings")
 end)
 
+-- Slot keys and rollouts -------------------------------------------------------
+
+local function Warlock()
+	local world = World()
+	world.spells[348] = { name = "Immolate", icon = 7001 }
+	world.spells[172] = { name = "Corruption", icon = 7002 }
+	local g = Login(world)
+	g.Slash("new Lock")
+	g.Slash("add lock |Hspell:348|h")
+	g.Slash("add lock |Hspell:172|h")
+	return g
+end
+
+Test("X then O = Immolate, X then X = Corruption, with the real buttons", function()
+	local g = Warlock()
+	Eq(g.ns.SetSlotKey("lock", 1, "PAD2"), "PAD2", "O on Immolate")
+	Eq(g.ns.SetSlotKey("lock", 2, "PAD3"), "PAD3", "X on Corruption")
+	g.Slash("bind lock PAD3")                  -- the ring itself opens on X too
+	g.Press("PAD3", true)
+	g.Press("PAD3", false)
+	Eq(g.env.ForeverRingsHeader:IsShown(), true, "a tap opens and stays open")
+	Eq(#g.casts, 0, "nothing yet")
+	g.Press("PAD2", true)
+	Eq(g.casts[1] and g.casts[1].value, 348, "X > O = Immolate")
+	g.Press("PAD2", false)
+	g.Press("PAD3", true)
+	g.Press("PAD3", false)
+	g.Press("PAD3", true)
+	Eq(g.casts[2] and g.casts[2].value, 172, "X > X = Corruption")
+	g.Press("PAD3", false)
+	Eq(#g.casts, 2, "letting go of X fires nothing else")
+	Eq(g.env.ForeverRingsHeader:IsShown(), false, "closed")
+	Eq(g.bindings.PAD3, "CLICK ForeverRingsTrigger_lock:LeftButton", "X opens the ring again")
+end)
+
+Test("slot keys show on the slots and follow their slot", function()
+	local g = Warlock()
+	g.ns.SetSlotKey("lock", 1, "PAD2")
+	g.Slash("bind lock L")
+	g.Press("L", true)
+	Eq(g.ns.display.slots[1].keyLabel:GetText(), "B", "B on Immolate")
+	Eq(g.ns.display.slots[2].keyLabel:GetText(), "", "nothing on Corruption")
+	g.Press("L", false)
+	g.Press("PADRSTICKDOWN", true)
+	g.Press("PADRSTICKDOWN", false)
+	g.ns.SetSlotKey("lock", 2, "PAD2")
+	local slots = g.env.ForeverRingsDB.rings.lock.slots
+	Eq(slots[1].bind, nil, "a key moves to its new slot")
+	Eq(slots[2].bind, "PAD2", "now on Corruption")
+	Eq(g.ns.SetSlotKey("lock", 2, "PAD2"), false, "the same key again removes it")
+	g.ns.SetSlotKey("lock", 1, "SHIFT-F")
+	g.ns.SetSlot("lock", 1, { kind = "spell", id = 172 })
+	Eq(slots[1].bind, "SHIFT-F", "replacing what's in a slot keeps its key")
+	Eq(g.ns.ShortKey("SHIFT-F"), "s-F", "short name")
+	Has(select(2, g.ns.SetSlotKey("food", 1, "PAD2")), "can't have slot keys", "not on rings that fill themselves")
+end)
+
+Test("rollout: a column, the stick steps through it, release picks", function()
+	local g = Login()
+	g.ns.SetLayout("food", "rollout")
+	local h = g.env.ForeverRingsHeader
+	Eq(h:GetAttribute("r:food:roll"), true, "rollout")
+	assert(h:GetAttribute("r:food:rstep") > 0, "geometry set")
+	g.Slash("bind food F")
+	g.Press("F", true)
+	for _ = 1, 20 do g.Update() end
+	local d = g.ns.display
+	Eq(d.rollout, true, "drawn as a rollout")
+	Eq(d.rollPanel:IsShown(), true, "column")
+	Eq(d.track:IsShown(), false, "no ring track")
+	g.Press("PADRSTICKUP", true)
+	g.Press("PADRSTICKUP", false)
+	g.Press("PADRSTICKUP", true)
+	g.Press("PADRSTICKUP", false)
+	g.Update()
+	Eq(d:SelectedSlice(), 2, "stepped to item 2")
+	Has(d.title:GetText(), "Mage Bread", "its name")
+	Eq(h:IsShown(), true, "the stick alone doesn't pick")
+	g.Press("F", false)
+	Eq(g.casts[1] and g.casts[1].value, "item:102", "release picks item 2")
+	g.ns.SetLayout("food", "ring")
+	Eq(h:GetAttribute("r:food:roll"), nil, "back to a ring")
+end)
+
+Test("rollout: the stick backup steps too when direction buttons don't arrive", function()
+	local g = Login()
+	g.ns.SetLayout("food", "rollout")
+	g.Slash("bind food F")
+	g.Press("F", true)
+	g.ns.display.frame.scripts.OnShow(g.ns.display.frame)
+	g.Stick("Right", 0, 0.9)
+	g.Stick("Right", 0, 0.9)          -- held: still one step
+	g.Stick("Right", 0, 0)
+	g.Stick("Right", 0, 0.9)
+	Eq(g.env.ForeverRingsHeader:GetAttribute("sel"), 2, "two pushes, two steps")
+end)
+
 -- Controller works only after /reload (bug report) ---------------------------
 
 -- The fake client doesn't fire OnShow by itself; the camera hold (and with it

@@ -16,6 +16,8 @@
   - **Party**: you and your group with health bars. Aim at someone and release to heal them without changing your target, or just target them. Built for healers on a controller. Optional: a different heal on release, A, X and Y, and fixed places by role (tank always right).
 - **Main ring with sub-rings.** One button for everything: Main → Food / Mounts / Bag / Tools / your own rings.
 - **Separate rings too.** Every ring can also get its own button.
+- **Ring or rollout.** Any ring can open as a column out of its action bar button instead.
+- **Slot keys.** Give a slot its own button while the ring is open: open on X, then O = Immolate, X = Corruption. The stick still works too.
 - **Your own rings.** Spells, items, toys, mounts, your own **macros**, and other rings as sub-rings.
 - **No keyboard needed.** Setup, buttons, names and settings all work on a controller.
 - **Cooldowns and usability** on every slot.

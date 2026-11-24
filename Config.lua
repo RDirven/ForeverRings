@@ -550,8 +550,9 @@ local function RenderRings()
 		end
 		local items = {}
 		for i, slice in ipairs(slices) do
+			local keyName = ns.ShortKey(slice.bind)
 			items[i] = slice.add and { text = "|cff59bfff+ Add|r", icon = false }
-				or { text = slice.name or "?", icon = slice.icon }
+				or { text = (slice.name or "?") .. (keyName and ("  |cff59bfff[" .. keyName .. "]|r") or ""), icon = slice.icon }
 		end
 		ui.listTitle:SetText(ns.RingLabel(key))
 		RenderList(items, state.slot)
@@ -609,10 +610,10 @@ local function RenderRings()
 				return SetHint("|cffff5555Press X (or right-click) again to clear this slot|r   B cancel")
 			end
 			ui.info:SetText(("Slot %d of %d.  Each ring holds up to %d.\n|cff888888Drag a spell, item, mount or macro onto a slot.\nRight-click a slot to clear it.|r"):format(state.slot, #slices, ns.MAX_SLICES))
-			return SetHint("Up/Down slot   A choose   X clear" .. (key ~= "main" and "   Y rename" or "") .. "   B back")
+			return SetHint("Up/Down slot   A choose   X clear   RB key   LB " .. (ns.IsRollout(key) and "ring" or "rollout") .. (key ~= "main" and "   Y rename" or "") .. "   B back")
 		end
 		ui.info:SetText("This ring fills itself from your bags and collection.")
-		return SetHint("Up/Down look around   B back")
+		return SetHint("Up/Down look around   LB " .. (ns.IsRollout(key) and "ring" or "rollout") .. "   B back")
 	end
 
 	local items = {}
@@ -680,6 +681,12 @@ local function RenderToolbar()
 	ui.list:ClearAllPoints()
 	ui.list:SetPoint("TOPLEFT", 20, picking and LIST_Y_PICK or LIST_Y)
 	ui.rename:SetShown(editing and key ~= "main")
+	local layoutable = rings and state.mode == "edit" and key ~= "party"
+	ui.layoutButton:SetShown(layoutable)
+	if layoutable then
+		ui.layoutButton:SetText(ns.IsRollout(key) and "Rollout" or "Ring")
+	end
+	ui.keyButton:SetShown(editing)
 	ui.plus:SetShown(editing)
 	ui.minus:SetShown(editing)
 	if state.tab ~= "rings" or state.mode ~= "list" then
@@ -697,7 +704,11 @@ Render = function()
 	RenderTabs()
 	if state.capture then
 		RenderToolbar()
-		if state.capture == "bar" then
+		if state.capture == "slot" then
+			local ringKey, index = state.captureSlot[1], state.captureSlot[2]
+			local slice = ns.resolved[ringKey] and ns.resolved[ringKey][index]
+			ui.capture:SetText(ns.SlotCapturePrompt(slice and slice.name or ("slot " .. index), ns.RingLabel(ringKey)))
+		elseif state.capture == "bar" then
 			ui.capture:SetText("Press the action bar button where " .. ns.RingLabel(state.barPick) .. " should go\n(for example L2 + Triangle), or click one: the ring is on\nyour cursor. An empty one is best.\n\n|cff888888Right-click here or wait 15 seconds to cancel.|r")
 		else
 			ui.capture:SetText("Press the button that opens this screen.\n\n|cff888888B, Esc or right-click cancels.|r")
@@ -806,6 +817,16 @@ function actions.rings(action)
 			state.slot = Move(state.slot, -1, count)
 		elseif action == "right" or action == "down" then
 			state.slot = Move(state.slot, 1, count)
+		elseif action == "prevTab" and key ~= "party" then
+			-- LB: ring or rollout.
+			local rollout = not ns.IsRollout(key)
+			if Try(ns.SetLayout(key, rollout and "rollout" or "ring")) then
+				Say(ns.RingLabel(key) .. (rollout and " opens as a rollout." or " opens as a ring."))
+			end
+		elseif action == "nextTab" and ns.IsEditable(key) and ForeverRingsDB.rings[key].slots[state.slot] then
+			-- RB: the selected slot's own key.
+			state.captureSlot = { key, state.slot }
+			StartCapture("slot")
 		elseif action == "accept" and key == "party" then
 			for i, picker in ipairs(PICKERS) do
 				if picker.label == "Spells" then
@@ -1181,8 +1202,32 @@ local function WithModifiers(key)
 		.. (IsShiftKeyDown and IsShiftKeyDown() and "SHIFT-" or "") .. key
 end
 
+function ns.SlotCapturePrompt(slotName, ringName)
+	return "Press the button for |cffffffff" .. slotName .. "|r.\n"
+		.. "It only counts while " .. ringName .. " is open, so any button works,\n"
+		.. "even the one that opens the ring.\n\n"
+		.. "|cff888888The same button again removes it. Esc or right-click cancels.|r"
+end
+
 local function FinishCapture(key)
 	local target = state.capture
+	if target == "slot" then
+		if key ~= "ESCAPE" then
+			local result, err = ns.SetSlotKey(state.captureSlot[1], state.captureSlot[2], key)
+			if result then
+				Say("Slot key: " .. ns.ShortKey(result))
+			elseif result == false then
+				Say("Slot key removed.")
+			else
+				Say(err)
+			end
+		end
+		state.capture, state.captureSlot = nil, nil
+		ui.frame:EnableKeyboard(false)
+		ui.frame:EnableGamePadButton(false)
+		ApplyBindings()
+		return Render()
+	end
 	if key == "ESCAPE" or key == "PAD2" then
 		state.capture = nil
 	elseif RESERVED[key] then
@@ -1331,6 +1376,8 @@ local function Build()
 	ui.plus = SmallButton("+", 26, 30, Plus)
 	ui.rename = SmallButton("Rename", 70, 60, function() HandleKey("PAD4") end)
 	ui.back = SmallButton("Back", 56, 134, function() HandleKey("ESCAPE") end)
+	ui.keyButton = SmallButton("Key", 44, 194, function() HandleKey("PADRSHOULDER") end)
+	ui.layoutButton = SmallButton("Ring", 70, 242, function() HandleKey("PADLSHOULDER") end)
 
 	local list = CreateFrame("Frame", nil, frame)
 	list:SetSize(LIST_WIDTH, VISIBLE_ROWS * ROW_HEIGHT)

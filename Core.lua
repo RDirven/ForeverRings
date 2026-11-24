@@ -39,7 +39,8 @@ local DEFAULTS = {
 	welcomed = false,
 	partyHeals = "one",   -- "one": one spell | "buttons": release, A, X and Y each a spell | "hover": Hover cast
 	partyOrder = "group", -- "group": group order | "role": tank right, healer left, DPS below
-	partyButtons = {},    -- [a|x|y] = spellID
+	partyButtons = {},
+	layouts = {},         -- [ring] = "rollout" for a column instead of a ring    -- [a|x|y] = spellID
 	partyHover = {},      -- Hover cast: [a|b|x|y|l-a...|r-y] = spellID
 	partyOpen = "tap",    -- Hover cast: "tap" one heal closes | "toggle" open until pressed again | "hold" open while held
 	partyFill = "crust",  -- Party ring health grows from the "crust" inward or the "centre" outward
@@ -172,6 +173,13 @@ local function CreateHeader()
 	SecureButton("ForeverRingsBack", ns.snippets.back, { "AnyDown" })
 	SecureButton("ForeverRingsButtonX", ns.snippets.buttonx, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
 	SecureButton("ForeverRingsButtonY", ns.snippets.buttony, { "AnyDown" }):SetAttribute("useOnKeyDown", true)
+	-- One per slot: a slot's own key (while its ring is open) clicks it.
+	-- Down only, so letting go of the key that opened the ring can't fire it.
+	for i = 1, ns.MAX_SLICES do
+		local slotButton = SecureButton("ForeverRingsSlot" .. i, ns.snippets.slot, { "AnyDown" })
+		slotButton:SetAttribute("slot", i)
+		slotButton:SetAttribute("useOnKeyDown", true)
+	end
 	for _, side in ipairs({ "l", "r" }) do
 		SecureButton("ForeverRingsLayer_" .. side, ns.snippets.layer, { "AnyDown", "AnyUp" }):SetAttribute("layer", side)
 	end
@@ -239,8 +247,25 @@ local function RefreshAll()
 			header:SetAttribute(prefix .. "t" .. i, slice and slice.type)
 			header:SetAttribute(prefix .. "v" .. i, slice and slice.value)
 			header:SetAttribute(prefix .. "u" .. i, slice and slice.unit)
+			header:SetAttribute(prefix .. "k" .. i, slice and slice.bind)
 		end
 		header:SetAttribute(prefix .. "n", #slices)
+		local keyed
+		for _, slice in ipairs(slices) do
+			keyed = keyed or slice.bind ~= nil
+		end
+		header:SetAttribute(prefix .. "keys", keyed or nil)
+		-- Rollout: a column next to the ring's action bar button.
+		local rollout = ns.IsRollout(key)
+		header:SetAttribute(prefix .. "roll", rollout or nil)
+		local rx, ry, rstep, rdir
+		if rollout then
+			rx, ry, rstep, rdir = ns.RolloutGeometry(key, #slices)
+		end
+		header:SetAttribute(prefix .. "rx", rx)
+		header:SetAttribute(prefix .. "ry", ry)
+		header:SetAttribute(prefix .. "rstep", rstep)
+		header:SetAttribute(prefix .. "rdir", rdir)
 		local center = ns.autoRings[key] and ns.autoRings[key].center
 		header:SetAttribute(prefix .. "ct", center and center.type or nil)
 		header:SetAttribute(prefix .. "cv", center and center.value or nil)
@@ -598,7 +623,13 @@ function ns.SetSlot(key, index, entry)
 	elseif index > #ring.slots + 1 or index > ns.MAX_SLICES then
 		return nil, "That ring is full (" .. ns.MAX_SLICES .. " slots). Use a sub-ring for more."
 	end
-	ring.slots[index] = entry
+	local old = ring.slots[index]
+	local copy = {}
+	for k, v in pairs(entry) do
+		copy[k] = v
+	end
+	copy.bind = copy.bind or (old and old.bind)
+	ring.slots[index] = copy
 	RefreshAll()
 	return true
 end
@@ -744,6 +775,81 @@ local function VisibleSlots()
 		frame = EnumerateFrames(frame)
 	end
 	return slots
+end
+
+-- The visible action button that holds this ring, for anchoring a rollout.
+function ns.RingBarButton(key)
+	local slot = ns.RingOnBar and ns.RingOnBar(key)
+	if not (slot and EnumerateFrames) then
+		return nil
+	end
+	local frame = EnumerateFrames()
+	while frame do
+		if rawget(frame, "action") == slot and frame:IsVisible() then
+			return frame
+		end
+		frame = EnumerateFrames(frame)
+	end
+end
+
+-- Rollouts ------------------------------------------------------------------
+
+ns.ROLL_STEP = 60 -- distance between items, before the ring size setting
+
+function ns.IsRollout(key)
+	return key ~= "party" and ForeverRingsDB.layouts[key] == "rollout"
+end
+
+-- Where a rollout's items go, in header units: centre of the first item,
+-- distance between items and the direction (+1 up, -1 down). Out from the
+-- ring's action bar button, away from the screen edge; in the middle of the
+-- screen when the ring isn't on a bar.
+function ns.RolloutGeometry(key, n)
+	local step = ns.ROLL_STEP * (ForeverRingsDB.scale or 1)
+	local button = ns.RingBarButton(key)
+	if button and button:GetCenter() then
+		local hs, bs = header:GetEffectiveScale(), button:GetEffectiveScale()
+		local bx, by = button:GetCenter()
+		bx, by = bx * bs / hs, by * bs / hs
+		local half = button:GetHeight() * bs / hs / 2
+		local dir = by < header:GetHeight() / 2 and 1 or -1
+		return bx, by + dir * (half + 8 + step / 2), step, dir
+	end
+	return header:GetWidth() / 2, header:GetHeight() / 2 - (n - 1) * step / 2, step, 1
+end
+
+function ns.SetLayout(key, layout)
+	if InCombatLockdown() then
+		return nil, COMBAT
+	end
+	ForeverRingsDB.layouts[key] = layout == "rollout" and "rollout" or nil
+	RefreshAll()
+	return true
+end
+
+-- A slot's own key: pressed while its ring is open, it uses that slot. Giving
+-- a slot the key it already has takes it off; a key moves from another slot
+-- of the same ring.
+function ns.SetSlotKey(key, index, binding)
+	local ring = ForeverRingsDB.rings[key]
+	if InCombatLockdown() then
+		return nil, COMBAT
+	elseif not (ring and ring.slots[index]) then
+		return nil, ns.autoRings[key] and "Rings that fill themselves can't have slot keys: their slots move." or "No slot " .. index .. "."
+	end
+	local entry = ring.slots[index]
+	if entry.bind == binding then
+		entry.bind = nil
+	else
+		for _, other in ipairs(ring.slots) do
+			if other.bind == binding then
+				other.bind = nil
+			end
+		end
+		entry.bind = binding
+	end
+	RefreshAll()
+	return entry.bind or false
 end
 
 local function RingMacroIndex(key)

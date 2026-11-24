@@ -115,6 +115,10 @@ local function CreateSlot(parent)
 	slot.count = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
 	slot.count:SetPoint("BOTTOMRIGHT", -2, 2)
 
+	-- The slot's own key, if it has one.
+	slot.keyLabel = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+	slot.keyLabel:SetPoint("TOPLEFT", -4, 4)
+
 	-- Party ring: the member's name, on their pizza slice (see LayoutWedges),
 	-- and the debuffs you can dispel from them under it.
 	slot.label = slot:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -280,6 +284,24 @@ local function OnStick(_, stick, x, y)
 	end
 	ns.diag.stickEvents = ns.diag.stickEvents + 1
 	ns.lastStickY = y
+	local active = header:GetAttribute("active")
+	if active and ns.IsRollout(active) then
+		-- Rollout: one step per push up or down, like the secure code.
+		y = y * (ForeverRingsDB.stickYSign or 1)
+		local push = y > 0.6 and 1 or y < -0.6 and -1 or 0
+		if push ~= 0 and push ~= ns.rollPush and not InCombatLockdown() then
+			local n = header:GetAttribute("r:" .. active .. ":n") or 0
+			local sel = header:GetAttribute("sel")
+			local step = push * (header:GetAttribute("r:" .. active .. ":rdir") or 1)
+			sel = sel and sel + step or (step > 0 and 1 or n)
+			if n > 0 then
+				header:SetAttribute("sel", math.max(1, math.min(n, sel)))
+				header:SetAttribute("moved", true)
+			end
+		end
+		ns.rollPush = push
+		return
+	end
 	if InCombatLockdown() or x * x + y * y < 0.25 then
 		-- Let go: keep the last aim, like the secure code does.
 		return
@@ -391,6 +413,12 @@ function ns.CreateDisplay(header)
 	self.pointer:SetColorTexture(1, 1, 1, 1)
 	AddCircleMask(frame, self.pointer)
 	self.pointer:Hide()
+
+	-- Rollout: a dark column behind the items, with an accent line at its foot.
+	self.rollPanel = frame:CreateTexture(nil, "BACKGROUND")
+	self.rollPanel:SetColorTexture(0.03, 0.04, 0.06, 0.85)
+	self.rollLine = frame:CreateTexture(nil, "BORDER")
+	self.rollLine:SetHeight(2)
 
 	self.title = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
 	self.title:SetPoint("CENTER", 0, 8)
@@ -642,6 +670,25 @@ function Display:HealthFraction(unit, health, maxHealth)
 	return 1, 1
 end
 
+-- Short name of a key for on a slot: A/B/X/Y for the face buttons, D-pad and
+-- shoulders shortened, keyboard keys with s-/c-/a- for Shift/Ctrl/Alt.
+local SHORT_KEYS = {
+	PAD1 = "A", PAD2 = "B", PAD3 = "X", PAD4 = "Y",
+	PADDUP = "D^", PADDDOWN = "Dv", PADDLEFT = "D<", PADDRIGHT = "D>",
+	PADLSHOULDER = "LB", PADRSHOULDER = "RB", PADLTRIGGER = "LT", PADRTRIGGER = "RT",
+	PADLSTICK = "L3", PADRSTICK = "R3", PADBACK = "Back", PADFORWARD = "Start",
+	PADPADDLE1 = "P1", PADPADDLE2 = "P2", PADPADDLE3 = "P3", PADPADDLE4 = "P4",
+}
+
+function ns.ShortKey(binding)
+	if not binding then
+		return nil
+	end
+	local mods, key = binding:match("^(.-)([^%-]+)$")
+	mods = (mods or ""):gsub("SHIFT%-", "s-"):gsub("CTRL%-", "c-"):gsub("ALT%-", "a-")
+	return mods .. (SHORT_KEYS[key] or key)
+end
+
 function Display:Render(key)
 	self.key = key
 	self.slices = ns.resolved and ns.resolved[key] or {}
@@ -704,6 +751,25 @@ function Display:Render(key)
 	end
 	for i = n + 1, #self.slots do
 		self.slots[i]:Hide()
+	end
+	for i, slice in ipairs(self.slices) do
+		self.slots[i].keyLabel:SetText(ns.ShortKey(slice.bind) or "")
+	end
+	-- Rollout or ring: the ring's own decoration only shows for a ring.
+	self.rollout = ns.IsRollout(key)
+	local radial = not self.rollout
+	self.backdrop:SetShown(radial)
+	self.track:SetShown(radial)
+	self.trackLight:SetShown(radial)
+	self.centerGlow:SetShown(radial)
+	self.rollPanel:SetShown(self.rollout)
+	self.rollLine:SetShown(self.rollout)
+	self.title:ClearAllPoints()
+	if self.rollout then
+		self.geo = { ns.RolloutGeometry(key, n) }
+		self.rollLine:SetColorTexture(color[1], color[2], color[3], 0.9)
+	else
+		self.title:SetPoint("CENTER", 0, 8)
 	end
 	self:LayoutWedges()
 	self:UpdateHint()
@@ -842,6 +908,25 @@ end
 -- Mirrors the PICK snippet so the highlight matches what will be used.
 function Display:SelectedSlice()
 	local header, n = self.header, #self.slices
+	if self.rollout then
+		-- Mirrors the rollout part of PICK: the stick's step, or a moved mouse.
+		local pick = header:GetAttribute("sel")
+		local rx, ry, rstep, rdir = unpack(self.geo or {})
+		local mx0, my0 = header:GetAttribute("mx0"), header:GetAttribute("my0")
+		if rx and mx0 then
+			local cx, cy = GetCursorPosition()
+			local scale = header:GetEffectiveScale()
+			local x, y = cx / scale - header:GetLeft(), cy / scale - header:GetBottom()
+			local mvx, mvy = x - mx0, y - my0
+			if mvx * mvx + mvy * mvy >= ns.MOVE_ZONE * ns.MOVE_ZONE and math.abs(x - rx) <= rstep / 2 then
+				local i = math.floor((y - ry) * rdir / rstep + 0.5) + 1
+				if i >= 1 and i <= n then
+					pick = i
+				end
+			end
+		end
+		return pick and pick >= 1 and pick <= n and pick or nil
+	end
 	local dx, dy = 0, 0
 	if header:GetAttribute("held-right") then dx = dx + 1 end
 	if header:GetAttribute("held-left") then dx = dx - 1 end
@@ -923,6 +1008,61 @@ function Display:UpdateGroup()
 	return lowest
 end
 
+-- Rollout: the items slide out of the action bar button one after another,
+-- the selected one grows with its halo, its name shows beside the column.
+function Display:AnimateRollout(elapsed, selected, pulse, color, clean, rest)
+	local rx, ry, step, dir = unpack(self.geo)
+	local s = ForeverRingsDB.scale or 1
+	local n = #self.slices
+	local open = EaseOut(self.openAge / OPEN_TIME)
+	-- Header units to the (scaled) display frame's units.
+	local function Place(region, point, x, y)
+		region:ClearAllPoints()
+		region:SetPoint(point, self.frame, "BOTTOMLEFT", x / s, y / s)
+	end
+	local span = math.max(n - 1, 0) * step * open
+	local width = (ICON_SIZE + 18) * s
+	self.rollPanel:SetSize(width / s, (span + ICON_SIZE * s + 18 * s) / s)
+	Place(self.rollPanel, "CENTER", rx, ry + dir * span / 2)
+	self.rollPanel:SetAlpha(rest)
+	self.rollLine:SetWidth(width / s)
+	Place(self.rollLine, "CENTER", rx, ry - dir * (ICON_SIZE * s / 2 + 9 * s))
+	for i = 1, n do
+		local slot = self.slots[i]
+		local on = i == selected
+		local p = EaseOutBack((self.openAge - (i - 1) * STAGGER) / OPEN_TIME)
+		Place(slot, "CENTER", rx, ry + dir * (i - 1) * step * p)
+		slot.scale = Approach(slot.scale, on and SELECT_SCALE or 1, elapsed, 14)
+		slot:SetScale(math.max(0.01, slot.scale * (0.5 + 0.5 * Clamp(p))))
+		slot:SetAlpha(Clamp(p) * ((selected and not on) and 0.65 or 1) * (on and 1 or rest))
+		slot.halo:SetAlpha(on and pulse or 0)
+		slot.glow:SetAlpha(not clean and on and pulse or 0)
+		if on then
+			slot.rim:SetVertexColor(color[1], color[2], color[3])
+			slot.rim:SetAlpha(1)
+		else
+			slot.rim:SetVertexColor(1, 1, 1)
+			slot.rim:SetAlpha(0.3)
+		end
+		slot.pingAge = slot.pingAge + elapsed
+		local ping = Clamp(slot.pingAge / PING_TIME)
+		slot.ping:SetAlpha(ping < 1 and (1 - ping) * 0.9 or 0)
+		slot.ping:SetSize((ICON_SIZE + 10) * (1 + 0.7 * ping), (ICON_SIZE + 10) * (1 + 0.7 * ping))
+	end
+	-- Name of the selected item (or the ring) beside the selected item.
+	local at = selected or n
+	Place(self.title, "LEFT", rx + width / 2 + 10 * s, ry + dir * (at - 1) * step)
+	if n == 0 then
+		self.title:SetText(ns.RingLabel(self.key) .. "  |cff999999(empty)|r")
+	elseif selected then
+		local slice = self.slices[selected]
+		local keyName = ns.ShortKey(slice.bind)
+		self.title:SetText((slice.name or "") .. (keyName and ("  |cff999999" .. keyName .. "|r") or ""))
+	else
+		self.title:SetText(ns.RingLabel(self.key))
+	end
+end
+
 function Display:Animate(elapsed)
 	self.time = self.time + elapsed
 	self.openAge = self.openAge + elapsed
@@ -958,6 +1098,9 @@ function Display:Animate(elapsed)
 	local clean = ForeverRingsDB.style ~= "classic"
 	local pulse = 0.75 + 0.25 * math.sin(self.time * 5)
 	local color = self.color or COLORS.clean
+	if self.rollout then
+		return self:AnimateRollout(elapsed, selected, pulse, color, clean, rest)
+	end
 	local lowest = self:UpdateGroup()
 	if self.key == "party" then
 		self.auraAge = (self.auraAge or AURA_INTERVAL) + elapsed

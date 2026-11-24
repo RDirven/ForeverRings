@@ -2,6 +2,8 @@
 
 ## 0.6.1
 
+- **Rollouts**: any ring can open as a column out of its action bar button instead of a ring (ring editor: LB, or the Ring/Rollout button). Step through it with the stick up/down, then let go of the ring button or press A. A tap opens it and it stays open.
+- **Slot keys**: give any slot of your own rings its own button (ring editor: RB, then press the button). It only counts while that ring is open, so any button works, even the one that opens the ring: rollout on X with Immolate on O and Corruption on X means X > O = Immolate, X > X = Corruption. Optional: the stick still works. The key shows on the slot.
 - Fixed (hopefully for good): some sessions the controller couldn't aim in rings until a /reload, while the mouse worked. The ring now also reads the aiming stick itself, so out of combat it aims even when the client doesn't deliver the stick's direction buttons; release the ring button or press A to pick. (In combat the game only allows the secure path.)
 - New `/frings debug`: open a ring, move the stick, close it, then type it. It shows whether the stick and its direction buttons reach the addon. Please paste the result in a comment if the controller still doesn't aim.
 - The ring learns which way is up from your stick, for clients that report it the other way round.

@@ -511,6 +511,8 @@ function ns.ResolveAll()
 			else
 				slices[#slices + 1] = ItemSlice(entry.id)
 			end
+			-- The slot's own key (optional), picked while the ring is open.
+			slices[#slices].bind = entry.bind
 		end
 		resolved[key] = Truncate(slices)
 	end
