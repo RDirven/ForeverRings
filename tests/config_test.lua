@@ -819,6 +819,23 @@ Test("Party options in Settings, and a heal per button in the editor", function(
 	Eq(g.env.ForeverRingsDB.partyButtons.x, nil, "cleared")
 end)
 
+Test("ring editor with a keyboard: a slot key can be a key with Shift", function()
+	local g, ui, st = Open()
+	Pad(g, "up", "A", "A", "RB", "A")
+	g.KeyDown("TAB")                         -- Tab = RB: set this slot's key
+	Eq(st.capture, "slot", "waiting")
+	g.env.IsShiftKeyDown = function() return true end
+	g.KeyDown("F")
+	g.env.IsShiftKeyDown = nil
+	Eq(g.env.ForeverRingsDB.rings.ring1.slots[1].bind, "SHIFT-F", "Shift+F")
+	Has(RowText(ui, 1), "[s-F]", "shown short")
+	ui.keyButton.scripts.OnClick()           -- the Key button (mouse)
+	Eq(st.capture, "slot", "Key button waits too")
+	g.KeyDown("ESCAPE")
+	ui.layoutButton.scripts.OnClick()
+	Eq(g.env.ForeverRingsDB.layouts.ring1, "rollout", "the Ring/Rollout button")
+end)
+
 Test("ring editor: RB sets a slot's key (any button), LB switches ring/rollout", function()
 	local g, ui, st = Open()
 	Pad(g, "up", "A", "A", "RB", "A")     -- new Ring1 with a spell in slot 1
