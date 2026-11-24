@@ -40,7 +40,7 @@ local DEFAULTS = {
 	partyHeals = "one",   -- "one": one spell | "buttons": release, A, X and Y each a spell | "hover": Hover cast
 	partyOrder = "group", -- "group": group order | "role": tank right, healer left, DPS below
 	partyButtons = {},
-	layouts = {},         -- [ring] = "rollout" for a column instead of a ring    -- [a|x|y] = spellID
+	-- [a|x|y] = spellID
 	partyHover = {},      -- Hover cast: [a|b|x|y|l-a...|r-y] = spellID
 	partyOpen = "tap",    -- Hover cast: "tap" one heal closes | "toggle" open until pressed again | "hold" open while held
 	partyFill = "crust",  -- Party ring health grows from the "crust" inward or the "centre" outward
@@ -255,17 +255,6 @@ local function RefreshAll()
 			keyed = keyed or slice.bind ~= nil
 		end
 		header:SetAttribute(prefix .. "keys", keyed or nil)
-		-- Rollout: a column next to the ring's action bar button.
-		local rollout = ns.IsRollout(key)
-		header:SetAttribute(prefix .. "roll", rollout or nil)
-		local rx, ry, rstep, rdir
-		if rollout then
-			rx, ry, rstep, rdir = ns.RolloutGeometry(key, #slices)
-		end
-		header:SetAttribute(prefix .. "rx", rx)
-		header:SetAttribute(prefix .. "ry", ry)
-		header:SetAttribute(prefix .. "rstep", rstep)
-		header:SetAttribute(prefix .. "rdir", rdir)
 		local center = ns.autoRings[key] and ns.autoRings[key].center
 		header:SetAttribute(prefix .. "ct", center and center.type or nil)
 		header:SetAttribute(prefix .. "cv", center and center.value or nil)
@@ -775,56 +764,6 @@ local function VisibleSlots()
 		frame = EnumerateFrames(frame)
 	end
 	return slots
-end
-
--- The visible action button that holds this ring, for anchoring a rollout.
-function ns.RingBarButton(key)
-	local slot = ns.RingOnBar and ns.RingOnBar(key)
-	if not (slot and EnumerateFrames) then
-		return nil
-	end
-	local frame = EnumerateFrames()
-	while frame do
-		if rawget(frame, "action") == slot and frame:IsVisible() then
-			return frame
-		end
-		frame = EnumerateFrames(frame)
-	end
-end
-
--- Rollouts ------------------------------------------------------------------
-
-ns.ROLL_STEP = 60 -- distance between items, before the ring size setting
-
-function ns.IsRollout(key)
-	return key ~= "party" and ForeverRingsDB.layouts[key] == "rollout"
-end
-
--- Where a rollout's items go, in header units: centre of the first item,
--- distance between items and the direction (+1 up, -1 down). Out from the
--- ring's action bar button, away from the screen edge; in the middle of the
--- screen when the ring isn't on a bar.
-function ns.RolloutGeometry(key, n)
-	local step = ns.ROLL_STEP * (ForeverRingsDB.scale or 1)
-	local button = ns.RingBarButton(key)
-	if button and button:GetCenter() then
-		local hs, bs = header:GetEffectiveScale(), button:GetEffectiveScale()
-		local bx, by = button:GetCenter()
-		bx, by = bx * bs / hs, by * bs / hs
-		local half = button:GetHeight() * bs / hs / 2
-		local dir = by < header:GetHeight() / 2 and 1 or -1
-		return bx, by + dir * (half + 8 + step / 2), step, dir
-	end
-	return header:GetWidth() / 2, header:GetHeight() / 2 - (n - 1) * step / 2, step, 1
-end
-
-function ns.SetLayout(key, layout)
-	if InCombatLockdown() then
-		return nil, COMBAT
-	end
-	ForeverRingsDB.layouts[key] = layout == "rollout" and "rollout" or nil
-	RefreshAll()
-	return true
 end
 
 -- A slot's own key: pressed while its ring is open, it uses that slot. Giving

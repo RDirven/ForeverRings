@@ -16,10 +16,6 @@ local _, ns = ...
 --   r:<ring>:btnk-<id>  "action" when btn-<id> is an action bar slot, not a spell
 --   r:<ring>:k<i>       optional key that picks slot i while the ring is open
 --   r:<ring>:keys       the ring has slot keys: a tap opens it and it stays open
---   r:<ring>:roll       shown as a rollout (a column) instead of a ring:
---                       the stick steps up/down through it (sel)
---   r:<ring>:rx/ry/rstep/rdir   rollout geometry in header units: centre of
---                       the first item, distance between items, +1 up / -1 down
 --   modlayer-<MODS>     "l" or "r": which trigger the client turns into that
 --                       modifier (GamePadEmulate*), e.g. modlayer-ALT- = "l"
 --   key-up/right/down/left, key-confirm, key-back   gamepad keys
@@ -30,7 +26,6 @@ local _, ns = ...
 --   aim-dx/aim-dy       last stick direction, kept after the stick is let go
 --   held                the ring button is down (not set by an action bar click)
 --   layer-l / layer-r   L2 / R2 held (when they're plain buttons)
---   sel                 selected item of an open rollout
 --   last:<ring>:t / :v / :u   last action used from each ring
 
 ns.DEAD_ZONE = 40
@@ -75,7 +70,6 @@ local OPEN = [[
 			owner:SetBindingClick(true, slotKey, "ForeverRingsSlot" .. i)
 		end
 	end
-	owner:SetAttribute("sel", nil)
 	owner:SetAttribute("aim-dx", nil)
 	owner:SetAttribute("aim-dy", nil)
 	-- Read the mouse once shown: a hidden frame has no mouse position.
@@ -100,7 +94,6 @@ local CLOSE = [[
 	owner:SetAttribute("aim-dy", nil)
 	owner:SetAttribute("layer-l", nil)
 	owner:SetAttribute("layer-r", nil)
-	owner:SetAttribute("sel", nil)
 ]]
 
 -- Expects `kind`, `value` and `unit` (may be nil). Loads the action into self; the secure click
@@ -178,28 +171,7 @@ local PICK = ([[
 		local angle = math.deg(math.atan2(dx, dy)) %% 360
 		pick = math.floor((angle + step / 2) / step) %% n + 1
 	end
-	-- A rollout: what the stick stepped to, or the item under a moved mouse.
-	if key and owner:GetAttribute("r:" .. key .. ":roll") then
-		pick = owner:GetAttribute("sel")
-		local mx, my = owner:GetMousePosition()
-		local mx0, my0 = owner:GetAttribute("mx0"), owner:GetAttribute("my0")
-		local rx, ry = owner:GetAttribute("r:" .. key .. ":rx"), owner:GetAttribute("r:" .. key .. ":ry")
-		local rstep, rdir = owner:GetAttribute("r:" .. key .. ":rstep"), owner:GetAttribute("r:" .. key .. ":rdir") or 1
-		if mx and mx0 and rx and rstep then
-			local w, h = owner:GetWidth(), owner:GetHeight()
-			local mvx, mvy = mx * w - mx0, my * h - my0
-			if mvx * mvx + mvy * mvy >= %d and math.abs(mx * w - rx) <= rstep / 2 then
-				local i = math.floor((my * h - ry) * rdir / rstep + 0.5) + 1
-				if i >= 1 and i <= n then
-					pick = i
-				end
-			end
-		end
-		if pick and (pick < 1 or pick > n) then
-			pick = nil
-		end
-	end
-]]):format(ns.MOVE_ZONE * ns.MOVE_ZONE, ns.DEAD_ZONE * ns.DEAD_ZONE, ns.MOVE_ZONE * ns.MOVE_ZONE)
+]]):format(ns.MOVE_ZONE * ns.MOVE_ZONE, ns.DEAD_ZONE * ns.DEAD_ZONE)
 
 -- Expects `key`, `pick`, `closeIfNothing` and `useButton` ("a", "x", "y" or
 -- nil). Enters a sub-ring, or fires the
@@ -331,10 +303,9 @@ ns.snippets = {
 		return false
 	end
 ]] .. PICK .. [[
-	-- Rings with slot keys and rollouts stay open after a tap: press a slot's
-	-- key, or aim and press again. Holding, aiming and letting go still picks.
-	if not pick and not owner:GetAttribute("moved")
-		and (owner:GetAttribute("r:" .. key .. ":keys") or owner:GetAttribute("r:" .. key .. ":roll")) then
+	-- Rings with slot keys stay open after a tap: press a slot's key, or aim
+	-- and press again. Holding, aiming and letting go still picks.
+	if not pick and not owner:GetAttribute("moved") and owner:GetAttribute("r:" .. key .. ":keys") then
 		owner:SetAttribute("sticky", true)
 		return false
 	end
@@ -439,27 +410,6 @@ ns.snippets = {
 	-- With release-pick on, letting go of the last held direction picks.
 	direction = [[
 	owner:SetAttribute("held-" .. self:GetAttribute("dir"), down or nil)
-	-- A rollout: up and down step through the column; nothing picks on release.
-	local rollKey = owner:GetAttribute("active")
-	if rollKey and owner:GetAttribute("r:" .. rollKey .. ":roll") then
-		local dir = self:GetAttribute("dir")
-		local n = owner:GetAttribute("r:" .. rollKey .. ":n") or 0
-		if down and n > 0 and (dir == "up" or dir == "down") then
-			local step = (dir == "up") and 1 or -1
-			step = step * (owner:GetAttribute("r:" .. rollKey .. ":rdir") or 1)
-			local sel = owner:GetAttribute("sel")
-			if not sel then
-				sel = step > 0 and 1 or n
-			else
-				sel = sel + step
-			end
-			if sel < 1 then sel = 1 end
-			if sel > n then sel = n end
-			owner:SetAttribute("sel", sel)
-			owner:SetAttribute("moved", true)
-		end
-		return false
-	end
 	-- Only presses change the aim: letting go (even one half of a diagonal
 	-- first) keeps what was selected.
 	if down then

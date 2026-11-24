@@ -832,11 +832,10 @@ Test("ring editor with a keyboard: a slot key can be a key with Shift", function
 	ui.keyButton.scripts.OnClick()           -- the Key button (mouse)
 	Eq(st.capture, "slot", "Key button waits too")
 	g.KeyDown("ESCAPE")
-	ui.layoutButton.scripts.OnClick()
-	Eq(g.env.ForeverRingsDB.layouts.ring1, "rollout", "the Ring/Rollout button")
+	Eq(st.capture, nil, "Esc cancels")
 end)
 
-Test("ring editor: RB sets a slot's key (any button), LB switches ring/rollout", function()
+Test("ring editor: RB sets a slot's key (any button)", function()
 	local g, ui, st = Open()
 	Pad(g, "up", "A", "A", "RB", "A")     -- new Ring1 with a spell in slot 1
 	Eq(st.mode, "edit", "editing")
@@ -853,11 +852,6 @@ Test("ring editor: RB sets a slot's key (any button), LB switches ring/rollout",
 	Pad(g, "RB")
 	g.KeyDown("ESCAPE")
 	Eq(st.capture, nil, "Esc cancels")
-	Pad(g, "LB")
-	Eq(g.env.ForeverRingsDB.layouts.ring1, "rollout", "rollout")
-	Has(st.message, "rollout", "told")
-	Pad(g, "LB")
-	Eq(g.env.ForeverRingsDB.layouts.ring1, nil, "ring again")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

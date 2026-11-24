@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- Rollouts are gone again: every ring opens as a ring. Slot keys stay.
+
 ## 0.7.0
 
 - **Rollouts**: any ring can open as a column out of its action bar button instead of a ring (ring editor: LB, or the Ring/Rollout button). Step through it with the stick up/down, then let go of the ring button or press A. A tap opens it and it stays open.

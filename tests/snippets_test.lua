@@ -425,7 +425,7 @@ Test("a normal slice after a party slice no longer carries a unit", function()
 	Eq(f.attrs.unit, nil, "no unit on the food button")
 end)
 
--- Slot keys and rollouts -------------------------------------------------------
+-- Slot keys -------------------------------------------------------------------
 
 local function Keys(key, keys)
 	header.attrs["r:" .. key .. ":keys"] = true
@@ -484,66 +484,6 @@ Test("a sub-ring gets its own slot keys", function()
 	Eq(header.attrs.active, "lock", "into the sub-ring")
 	Eq(header.bindings.PAD4, "ForeverRingsSlot1", "its key")
 	Eq(header.bindings.PAD3, "ForeverRingsButtonX", "main's key gone")
-end)
-
-local function Rollout(key, slices)
-	Ring(key, slices)
-	header.attrs["r:" .. key .. ":roll"] = true
-	header.attrs["r:" .. key .. ":rx"] = 500
-	header.attrs["r:" .. key .. ":ry"] = 100
-	header.attrs["r:" .. key .. ":rstep"] = 60
-	header.attrs["r:" .. key .. ":rdir"] = 1
-end
-
-Test("rollout: the stick steps up and down, letting go of the button picks", function()
-	Rollout("roll", { { "spell", 1 }, { "spell", 2 }, { "spell", 3 } })
-	local t = Handle({ ring = "roll" })
-	Run("trigger", t, true)
-	Dir("up", true) Dir("up", false)
-	Eq(header.attrs.sel, 1, "first up: item 1 (next to the button)")
-	Dir("up", true) Dir("up", false)
-	Dir("up", true) Dir("up", false)
-	Dir("up", true) Dir("up", false)
-	Eq(header.attrs.sel, 3, "stops at the end")
-	Dir("down", true) Dir("down", false)
-	Eq(header.attrs.sel, 2, "down steps back")
-	Eq(header.shown, true, "letting go of the stick doesn't pick")
-	Run("trigger", t, false)
-	Eq(t.attrs.spell, 2, "release picks item 2")
-end)
-
-Test("rollout: a tap stays open, then step and press A", function()
-	Rollout("roll", { { "spell", 1 }, { "spell", 2 } })
-	local t = Handle({ ring = "roll" })
-	Run("trigger", t, true)
-	Run("trigger", t, false)
-	Eq(header.shown, true, "open")
-	Dir("up", true) Dir("up", false)
-	local a = Handle({})
-	Run("confirm", a, true)
-	Eq(a.attrs.spell, 1, "A picks")
-end)
-
-Test("rollout growing downward: up steps toward the button", function()
-	Rollout("roll", { { "spell", 1 }, { "spell", 2 }, { "spell", 3 } })
-	header.attrs["r:roll:rdir"] = -1
-	local t = Handle({ ring = "roll" })
-	Run("trigger", t, true)
-	Dir("down", true) Dir("down", false)
-	Eq(header.attrs.sel, 1, "down: first item")
-	Dir("down", true) Dir("down", false)
-	Eq(header.attrs.sel, 2, "further down")
-end)
-
-Test("rollout: the mouse picks the item under it", function()
-	Rollout("roll", { { "spell", 1 }, { "spell", 2 }, { "spell", 3 } })
-	local t = Handle({ ring = "roll" })
-	header.mouse = { 0.5, 0.5 }
-	Run("trigger", t, true)
-	header.mouse = { 0.5, 220 / 600 }   -- item 3 sits at y = 100 + 2 * 60
-	local m = Handle({})
-	Run("mouse", m, true)
-	Eq(m.attrs.spell, 3, "clicked item 3")
 end)
 
 print(("%d passed, %d failed"):format(passed, failed))

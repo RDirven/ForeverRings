@@ -610,10 +610,10 @@ local function RenderRings()
 				return SetHint("|cffff5555Press X (or right-click) again to clear this slot|r   B cancel")
 			end
 			ui.info:SetText(("Slot %d of %d.  Each ring holds up to %d.\n|cff888888Drag a spell, item, mount or macro onto a slot.\nRight-click a slot to clear it.|r"):format(state.slot, #slices, ns.MAX_SLICES))
-			return SetHint("Up/Down slot   A choose   X clear   RB key   LB " .. (ns.IsRollout(key) and "ring" or "rollout") .. (key ~= "main" and "   Y rename" or "") .. "   B back")
+			return SetHint("Up/Down slot   A choose   X clear   RB key" .. (key ~= "main" and "   Y rename" or "") .. "   B back")
 		end
 		ui.info:SetText("This ring fills itself from your bags and collection.")
-		return SetHint("Up/Down look around   LB " .. (ns.IsRollout(key) and "ring" or "rollout") .. "   B back")
+		return SetHint("Up/Down look around   B back")
 	end
 
 	local items = {}
@@ -681,11 +681,6 @@ local function RenderToolbar()
 	ui.list:ClearAllPoints()
 	ui.list:SetPoint("TOPLEFT", 20, picking and LIST_Y_PICK or LIST_Y)
 	ui.rename:SetShown(editing and key ~= "main")
-	local layoutable = rings and state.mode == "edit" and key ~= "party"
-	ui.layoutButton:SetShown(layoutable)
-	if layoutable then
-		ui.layoutButton:SetText(ns.IsRollout(key) and "Rollout" or "Ring")
-	end
 	ui.keyButton:SetShown(editing)
 	ui.plus:SetShown(editing)
 	ui.minus:SetShown(editing)
@@ -817,12 +812,6 @@ function actions.rings(action)
 			state.slot = Move(state.slot, -1, count)
 		elseif action == "right" or action == "down" then
 			state.slot = Move(state.slot, 1, count)
-		elseif action == "prevTab" and key ~= "party" then
-			-- LB: ring or rollout.
-			local rollout = not ns.IsRollout(key)
-			if Try(ns.SetLayout(key, rollout and "rollout" or "ring")) then
-				Say(ns.RingLabel(key) .. (rollout and " opens as a rollout." or " opens as a ring."))
-			end
 		elseif action == "nextTab" and ns.IsEditable(key) and ForeverRingsDB.rings[key].slots[state.slot] then
 			-- RB: the selected slot's own key.
 			state.captureSlot = { key, state.slot }
@@ -1377,7 +1366,6 @@ local function Build()
 	ui.rename = SmallButton("Rename", 70, 60, function() HandleKey("PAD4") end)
 	ui.back = SmallButton("Back", 56, 134, function() HandleKey("ESCAPE") end)
 	ui.keyButton = SmallButton("Key", 44, 194, function() HandleKey("PADRSHOULDER") end)
-	ui.layoutButton = SmallButton("Ring", 70, 242, function() HandleKey("PADLSHOULDER") end)
 
 	local list = CreateFrame("Frame", nil, frame)
 	list:SetSize(LIST_WIDTH, VISIBLE_ROWS * ROW_HEIGHT)

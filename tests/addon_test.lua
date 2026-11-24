@@ -1213,7 +1213,7 @@ Test("Health fills from the centre: other ring textures", function()
 	Has(g.ns.display.slots[2].bands[1].ringMask:GetTexture(), "ringc1", "centre rings")
 end)
 
--- Slot keys and rollouts -------------------------------------------------------
+-- Slot keys -------------------------------------------------------------------
 
 local function Warlock()
 	local world = World()
@@ -1290,46 +1290,6 @@ Test("slot keys show on the slots and follow their slot", function()
 	Has(select(2, g.ns.SetSlotKey("food", 1, "PAD2")), "can't have slot keys", "not on rings that fill themselves")
 end)
 
-Test("rollout: a column, the stick steps through it, release picks", function()
-	local g = Login()
-	g.ns.SetLayout("food", "rollout")
-	local h = g.env.ForeverRingsHeader
-	Eq(h:GetAttribute("r:food:roll"), true, "rollout")
-	assert(h:GetAttribute("r:food:rstep") > 0, "geometry set")
-	g.Slash("bind food F")
-	g.Press("F", true)
-	for _ = 1, 20 do g.Update() end
-	local d = g.ns.display
-	Eq(d.rollout, true, "drawn as a rollout")
-	Eq(d.rollPanel:IsShown(), true, "column")
-	Eq(d.track:IsShown(), false, "no ring track")
-	g.Press("PADRSTICKUP", true)
-	g.Press("PADRSTICKUP", false)
-	g.Press("PADRSTICKUP", true)
-	g.Press("PADRSTICKUP", false)
-	g.Update()
-	Eq(d:SelectedSlice(), 2, "stepped to item 2")
-	Has(d.title:GetText(), "Mage Bread", "its name")
-	Eq(h:IsShown(), true, "the stick alone doesn't pick")
-	g.Press("F", false)
-	Eq(g.casts[1] and g.casts[1].value, "item:102", "release picks item 2")
-	g.ns.SetLayout("food", "ring")
-	Eq(h:GetAttribute("r:food:roll"), nil, "back to a ring")
-end)
-
-Test("rollout: the stick backup steps too when direction buttons don't arrive", function()
-	local g = Login()
-	g.ns.SetLayout("food", "rollout")
-	g.Slash("bind food F")
-	g.Press("F", true)
-	g.ns.display.frame.scripts.OnShow(g.ns.display.frame)
-	g.Stick("Right", 0, 0.9)
-	g.Stick("Right", 0, 0.9)          -- held: still one step
-	g.Stick("Right", 0, 0)
-	g.Stick("Right", 0, 0.9)
-	Eq(g.env.ForeverRingsHeader:GetAttribute("sel"), 2, "two pushes, two steps")
-end)
-
 -- Controller works only after /reload (bug report) ---------------------------
 
 -- The fake client doesn't fire OnShow by itself; the camera hold (and with it
@@ -1338,7 +1298,6 @@ local function Open(g, key)
 	g.Press(key, true)
 	g.ns.display.frame.scripts.OnShow(g.ns.display.frame)
 end
-
 
 Test("stick direction buttons not arriving: the stick itself still aims out of combat", function()
 	local g = Login()
